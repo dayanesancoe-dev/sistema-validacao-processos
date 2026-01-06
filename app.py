@@ -44,10 +44,6 @@ def init_db():
         conn = sqlite3.connect('processos.db', check_same_thread=False)
         c = conn.cursor()
 
-        # Verificar se a tabela 'processos' existe
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='processos'")
-        table_exists = c.fetchone()
-
         # Definir o schema esperado para a tabela 'processos'
         expected_processos_column_names = [
             'id', 'numero', 'rt', 'requerente', 'analista', 'uso', 
@@ -56,13 +52,18 @@ def init_db():
 
         schema_outdated = False
 
+        # Verificar se a tabela 'processos' existe
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='processos'")
+        table_exists = c.fetchone()
+
         if table_exists:
             c.execute("PRAGMA table_info(processos)")
             current_columns_info = c.fetchall()
             current_column_names = [col[1] for col in current_columns_info]
 
-            # Verifica se TODAS as colunas esperadas estão presentes
-            if not all(col_name in current_column_names for col_name in expected_processos_column_names):
+            # Verifica se TODAS as colunas esperadas estão presentes E se não há colunas extras inesperadas
+            if not (set(expected_processos_column_names) == set(current_column_names) and 
+                    len(expected_processos_column_names) == len(current_column_names)):
                 schema_outdated = True
         else:
             schema_outdated = True # Tabela não existe, então precisa ser criada
@@ -135,7 +136,7 @@ def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_proto
     except sqlite3.IntegrityError:
         return False, "❌ Erro: Já existe um processo com este número!"
     except Exception as e:
-        return False, f"❌ Erro ao cadastrar: {str(e)}"
+        return False, f"❌ Erro ao cadastrar processo: {str(e)}"
 
 def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
     """Atualiza um processo existente no banco de dados."""
@@ -191,6 +192,13 @@ def registrar_tramitacao(processo_id, setor, data_entrada, data_saida=None, obse
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
+        # Primeiro, fechar a tramitação anterior se houver uma aberta
+        c.execute('''UPDATE tramitacao 
+                    SET data_saida = ? 
+                    WHERE processo_id = ? AND data_saida IS NULL''', 
+                 (data_entrada, processo_id))
+
+        # Adicionar a nova tramitação
         c.execute('''INSERT INTO tramitacao 
                     (processo_id, setor, data_entrada, data_saida, observacao) 
                     VALUES (?, ?, ?, ?, ?)''',
@@ -212,7 +220,7 @@ def listar_tramitacoes(processo_id):
         return []
 
 def atualizar_tramitacao(tramitacao_id, setor, data_entrada, data_saida, observacao):
-    """Atualiza uma tramitação existente."""
+    """Atualiza uma movimentação de tramitação existente."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -308,12 +316,12 @@ with st.sidebar:
         reset_database()
 
     st.subheader("🔑 Chave de API Google Gemini")
-    # Usa st.session_state['api_key'] como valor padrão
     api_key_input = st.text_input("Insira sua API Key:", type="password", value=st.session_state['api_key'])
     if api_key_input:
         st.session_state['api_key'] = api_key_input
         st.success("API Key configurada!")
     else:
+        st.session_state['api_key'] = '' # Garante que seja uma string vazia se nada for inserido
         st.warning("Por favor, insira sua API Key do Google Gemini para usar a análise de IA.")
 
     st.divider()
@@ -359,6 +367,11 @@ with tab1:
                 sucesso, msg = cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo.strftime('%Y-%m-%d'))
                 if sucesso:
                     st.success(msg)
+                    # Adiciona a primeira tramitação automaticamente
+                    processo_recem_cadastrado = buscar_por_numero(numero)
+                    if processo_recem_cadastrado:
+                        registrar_tramitacao(processo_recem_cadastrado[0], "Protocolo", datetime.now().strftime('%Y-%m-%d'), None, "Cadastro inicial")
+                        st.info("Primeira tramitação (Protocolo) registrada automaticamente.")
                     st.experimental_rerun() # Recarrega para atualizar a lista
                 else:
                     st.error(msg)
@@ -372,34 +385,42 @@ with tab2:
     processos = listar()
 
     if not processos:
-        st.info("📭 Nenhum processo cadastrado ainda.")
+        st.info("📭 Nenhum processo cadastrado ainda. Use a aba 'Cadastrar' para adicionar.")
     else:
         st.subheader(f"Total de Processos: {len(processos)}")
         for p in processos:
             # p: (id, numero, rt, requerente, analista, uso, tipologia, area, data_protocolo, status, data_cadastro)
+
+            # Inicializa o estado de edição para cada processo
+            if f"edit_mode_{p[0]}" not in st.session_state:
+                st.session_state[f"edit_mode_{p[0]}"] = False
+
             with st.expander(f"Processo: {p[1]} - Requerente: {p[3]} - Status: {p[9]}"):
-                st.markdown(f"**Número:** {p[1]}")
-                st.markdown(f"**RT:** {p[2]}")
-                st.markdown(f"**Requerente:** {p[3]}")
-                st.markdown(f"**Analista:** {p[4]}")
-                st.markdown(f"**Uso:** {p[5]}")
-                st.markdown(f"**Tipologia:** {p[6]}")
-                st.markdown(f"**Área:** {p[7]} m²")
-                st.markdown(f"**Data Protocolo:** {datetime.strptime(p[8], '%Y-%m-%d').strftime('%d/%m/%Y')}")
-                st.markdown(f"**Status:** {p[9]}")
-                st.markdown(f"**Cadastrado em:** {datetime.strptime(p[10], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
+                # Se não estiver em modo de edição, mostra a visualização normal
+                if not st.session_state.get(f"edit_mode_{p[0]}", False):
+                    st.markdown(f"**Número:** {p[1]}")
+                    st.markdown(f"**RT:** {p[2]}")
+                    st.markdown(f"**Requerente:** {p[3]}")
+                    st.markdown(f"**Analista:** {p[4]}")
+                    st.markdown(f"**Uso:** {p[5]}")
+                    st.markdown(f"**Tipologia:** {p[6]}")
+                    st.markdown(f"**Área:** {p[7]} m²")
+                    st.markdown(f"**Data Protocolo:** {datetime.strptime(p[8], '%Y-%m-%d').strftime('%d/%m/%Y')}")
+                    st.markdown(f"**Status:** {p[9]}")
+                    st.markdown(f"**Cadastrado em:** {datetime.strptime(p[10], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
 
-                col_edit, col_del = st.columns(2)
+                    col_edit, col_del = st.columns(2)
 
-                with col_edit:
-                    if st.button("✏️ Editar Processo", key=f"edit_{p[0]}", use_container_width=True):
-                        st.session_state[f"edit_mode_{p[0]}"] = not st.session_state.get(f"edit_mode_{p[0]}", False)
+                    with col_edit:
+                        if st.button("✏️ Editar Processo", key=f"edit_btn_{p[0]}", use_container_width=True):
+                            st.session_state[f"edit_mode_{p[0]}"] = True
+                            st.experimental_rerun()
 
-                with col_del:
-                    if st.button("🗑️ Deletar Processo", key=f"delete_{p[0]}", type="secondary", use_container_width=True):
-                        # Confirmação de deleção
-                        if st.warning(f"Tem certeza que deseja deletar o processo {p[1]}? Esta ação é irreversível e também apagará todas as tramitações e análises associadas."):
-                            if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_{p[0]}", type="danger"):
+                    with col_del:
+                        if st.button("🗑️ Deletar Processo", key=f"delete_btn_{p[0]}", type="secondary", use_container_width=True):
+                            # Confirmação de deleção
+                            st.warning(f"Tem certeza que deseja deletar o processo {p[1]}? Esta ação é irreversível e também apagará todas as tramitações e análises associadas.")
+                            if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_btn_{p[0]}", type="danger"):
                                 sucesso, msg = deletar(p[0])
                                 if sucesso:
                                     st.success(msg)
@@ -407,7 +428,8 @@ with tab2:
                                 else:
                                     st.error(msg)
 
-                if st.session_state.get(f"edit_mode_{p[0]}", False):
+                # Se estiver em modo de edição, mostra o formulário de edição
+                else:
                     st.subheader(f"✏️ Editando Processo {p[1]}")
                     with st.form(f"form_editar_processo_{p[0]}"):
                         ed_numero = st.text_input("Número do Processo", value=p[1], key=f"ed_numero_{p[0]}")
@@ -435,7 +457,8 @@ with tab2:
                             default_date_protocolo = datetime.now().date()
                         ed_data_protocolo = st.date_input("Data do Protocolo", value=default_date_protocolo, key=f"ed_data_protocolo_{p[0]}")
 
-                        if st.form_submit_button("Salvar Alterações", type="primary"):
+                        col_save, col_cancel = st.columns(2)
+                        if col_save.form_submit_button("Salvar Alterações", type="primary"):
                             sucesso, msg = atualizar(p[0], ed_numero, ed_rt, ed_requerente, ed_analista, ed_uso, ed_tipologia, ed_area, ed_data_protocolo.strftime('%Y-%m-%d'))
                             if sucesso:
                                 st.success(msg)
@@ -443,6 +466,9 @@ with tab2:
                                 st.experimental_rerun()
                             else:
                                 st.error(msg)
+                        if col_cancel.form_submit_button("Cancelar"):
+                            st.session_state[f"edit_mode_{p[0]}"] = False # Sai do modo de edição
+                            st.experimental_rerun()
 
 # ==================== ABA 3: TRAMITAÇÃO ====================
 with tab3:
@@ -452,52 +478,58 @@ with tab3:
     if not processos_tramitacao:
         st.info("📭 Nenhum processo cadastrado para gerenciar tramitação.")
     else:
-        processo_selecionado_id = st.selectbox(
+        # Cria uma lista de tuplas (id, numero) para o selectbox
+        processo_options = [(p[0], p[1]) for p in processos_tramitacao]
+
+        # Garante que o valor padrão do selectbox seja o primeiro processo, se houver
+        default_index = 0
+        if 'selected_processo_tramitacao_id' in st.session_state and st.session_state['selected_processo_tramitacao_id'] in [p[0] for p in processo_options]:
+            default_index = [p[0] for p in processo_options].index(st.session_state['selected_processo_tramitacao_id'])
+
+        processo_selecionado_tuple = st.selectbox(
             "Selecione o Processo para Tramitação:",
-            options=[(p[0], p[1]) for p in processos_tramitacao],
-            format_func=lambda x: f"{x[1]}",
+            options=processo_options,
+            format_func=lambda x: f"{x[1]}", # Exibe apenas o número do processo
+            index=default_index,
             key="select_processo_tramitacao"
         )
 
-        if processo_selecionado_id:
-            pid_tramitacao = processo_selecionado_id[0]
-            st.subheader(f"Movimentações do Processo: {processo_selecionado_id[1]}")
+        if processo_selecionado_tuple:
+            pid_tramitacao = processo_selecionado_tuple[0]
+            st.session_state['selected_processo_tramitacao_id'] = pid_tramitacao # Salva o ID selecionado
 
-            # Formulário para registrar nova tramitação
-            with st.form("nova_tramitacao"):
-                st.markdown("#### Registrar Nova Movimentação")
-                col_t1, col_t2 = st.columns(2)
-                with col_t1:
-                    setor_novo = st.selectbox("Setor", setores_tramitacao, key="setor_novo")
-                    data_entrada_nova = st.date_input("Data de Entrada", value="today", key="data_entrada_nova")
-                with col_t2:
-                    data_saida_nova = st.date_input("Data de Saída (opcional)", value=None, key="data_saida_nova")
-                    observacao_nova = st.text_area("Observações", key="observacao_nova")
+            processo_dados = buscar_por_numero(processo_selecionado_tuple[1]) # Busca todos os dados do processo
 
-                if st.form_submit_button("Registrar Movimentação", type="primary"):
-                    if data_entrada_nova:
-                        # Primeiro, fechar a tramitação anterior se houver uma aberta
-                        c = conn.cursor()
-                        c.execute('''UPDATE tramitacao 
-                                    SET data_saida = ? 
-                                    WHERE processo_id = ? AND data_saida IS NULL''', 
-                                 (data_entrada_nova.strftime('%Y-%m-%d'), pid_tramitacao))
-                        conn.commit()
+            if processo_dados:
+                st.subheader(f"Movimentações do Processo: {processo_dados[1]}")
 
-                        sucesso, msg = registrar_tramitacao(
-                            pid_tramitacao, 
-                            setor_novo, 
-                            data_entrada_nova.strftime('%Y-%m-%d'), 
-                            data_saida_nova.strftime('%Y-%m-%d') if data_saida_nova else None,
-                            observacao_nova
-                        )
-                        if sucesso:
-                            st.success(msg)
-                            st.experimental_rerun()
+                # Formulário para registrar nova tramitação
+                with st.form("nova_tramitacao"):
+                    st.markdown("#### Registrar Nova Movimentação")
+                    col_t1, col_t2 = st.columns(2)
+                    with col_t1:
+                        setor_novo = st.selectbox("Setor", setores_tramitacao, key="setor_novo")
+                        data_entrada_nova = st.date_input("Data de Entrada", value="today", key="data_entrada_nova")
+                    with col_t2:
+                        data_saida_nova = st.date_input("Data de Saída (opcional)", value=None, key="data_saida_nova")
+                        observacao_nova = st.text_area("Observações", key="observacao_nova")
+
+                    if st.form_submit_button("Registrar Movimentação", type="primary"):
+                        if data_entrada_nova:
+                            sucesso, msg = registrar_tramitacao(
+                                pid_tramitacao, 
+                                setor_novo, 
+                                data_entrada_nova.strftime('%Y-%m-%d'), 
+                                data_saida_nova.strftime('%Y-%m-%d') if data_saida_nova else None,
+                                observacao_nova
+                            )
+                            if sucesso:
+                                st.success(msg)
+                                st.experimental_rerun()
+                            else:
+                                st.error(msg)
                         else:
-                            st.error(msg)
-                    else:
-                        st.error("❌ A Data de Entrada é obrigatória.")
+                            st.error("❌ A Data de Entrada é obrigatória.")
 
             st.divider()
             st.markdown("#### Histórico de Tramitação")
@@ -537,39 +569,44 @@ with tab3:
                 for t in tramitacoes:
                     # t: (id, processo_id, setor, data_entrada, data_saida, observacao)
                     icon = "➡️"
-                    if t[2] == "Protocolo": icon = "📝"
-                    elif t[2] == "Requerente": icon = "👤"
-                    elif t[2] == "Analista": icon = "👨‍💻"
-                    elif t[2] == "Fiscalização": icon = "🔍"
-                    elif t[2] == "Parecer Externo": icon = "🏢"
+                    if t[2] == "Arquivo": icon = "🗄️"
                     elif t[2] == "Emissão de Alvará": icon = "📜"
-                    elif t[2] == "Arquivo": icon = "🗄️"
+                    elif t[2] == "Fiscalização": icon = "🔍"
+                    elif t[2] == "Analista": icon = "👨‍💻"
+                    elif t[2] == "Requerente": icon = "👤"
+                    elif t[2] == "Protocolo": icon = "📝"
 
                     data_saida_display = datetime.strptime(t[4], '%Y-%m-%d').strftime('%d/%m/%Y') if t[4] else "Em andamento"
 
-                    with st.expander(f"{icon} {t[2]} - Entrada: {datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')} - Saída: {data_saida_display}"):
-                        st.markdown(f"**Setor:** {t[2]}")
-                        st.markdown(f"**Data de Entrada:** {datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')}")
-                        st.markdown(f"**Data de Saída:** {data_saida_display}")
-                        st.markdown(f"**Observações:** {t[5] if t[5] else 'Nenhuma'}")
+                    # Inicializa o estado de edição para cada tramitação
+                    if f"edit_tram_mode_{t[0]}" not in st.session_state:
+                        st.session_state[f"edit_tram_mode_{t[0]}"] = False
 
-                        col_tedit, col_tdel = st.columns(2)
-                        with col_tedit:
-                            if st.button("✏️ Editar Movimentação", key=f"edit_tram_{t[0]}", use_container_width=True):
-                                st.session_state[f"edit_tram_mode_{t[0]}"] = not st.session_state.get(f"edit_tram_mode_{t[0]}", False)
-                        with col_tdel:
-                            if st.button("🗑️ Deletar Movimentação", key=f"delete_tram_{t[0]}", type="secondary", use_container_width=True):
-                                # Confirmação de deleção
-                                if st.warning(f"Tem certeza que deseja deletar esta movimentação ({t[2]})?"):
-                                    if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_tram_{t[0]}", type="danger"):
+                    with st.expander(f"{icon} {t[2]} - Entrada: {datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')} - Saída: {data_saida_display}"):
+                        # Se não estiver em modo de edição
+                        if not st.session_state.get(f"edit_tram_mode_{t[0]}", False):
+                            st.markdown(f"**Setor:** {t[2]}")
+                            st.markdown(f"**Data de Entrada:** {datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')}")
+                            st.markdown(f"**Data de Saída:** {data_saida_display}")
+                            st.markdown(f"**Observações:** {t[5] if t[5] else 'Nenhuma'}")
+
+                            col_tedit, col_tdel = st.columns(2)
+                            with col_tedit:
+                                if st.button("✏️ Editar Movimentação", key=f"edit_tram_btn_{t[0]}", use_container_width=True):
+                                    st.session_state[f"edit_tram_mode_{t[0]}"] = True
+                                    st.experimental_rerun()
+                            with col_tdel:
+                                if st.button("🗑️ Deletar Movimentação", key=f"delete_tram_btn_{t[0]}", type="secondary", use_container_width=True):
+                                    st.warning(f"Tem certeza que deseja deletar esta movimentação ({t[2]})?")
+                                    if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_tram_btn_{t[0]}", type="danger"):
                                         sucesso, msg = deletar_tramitacao(t[0])
                                         if sucesso:
                                             st.success(msg)
                                             st.experimental_rerun()
                                         else:
                                             st.error(msg)
-
-                        if st.session_state.get(f"edit_tram_mode_{t[0]}", False):
+                        # Se estiver em modo de edição
+                        else:
                             st.markdown("##### Editando Movimentação")
                             with st.form(f"form_editar_tramitacao_{t[0]}"):
                                 ed_setor = st.selectbox("Setor", setores_tramitacao, index=setores_tramitacao.index(t[2]), key=f"ed_setor_{t[0]}")
@@ -578,7 +615,8 @@ with tab3:
                                 ed_data_saida = st.date_input("Data de Saída", value=ed_data_saida_val, key=f"ed_data_saida_{t[0]}")
                                 ed_observacao = st.text_area("Observações", value=t[5], key=f"ed_observacao_{t[0]}")
 
-                                if st.form_submit_button("Salvar Alterações da Movimentação", type="primary"):
+                                col_tsave, col_tcancel = st.columns(2)
+                                if col_tsave.form_submit_button("Salvar Edição", type="primary"):
                                     sucesso, msg = atualizar_tramitacao(
                                         t[0], 
                                         ed_setor, 
@@ -592,6 +630,10 @@ with tab3:
                                         st.experimental_rerun()
                                     else:
                                         st.error(msg)
+                                if col_tcancel.form_submit_button("Cancelar"):
+                                    st.session_state[f"edit_tram_mode_{t[0]}"] = False
+                                    st.experimental_rerun()
+                    st.markdown("---")
 
 # ==================== ABA 4: KANBAN ====================
 with tab4:
@@ -856,8 +898,6 @@ Sistema de Validação de Processos - Prefeitura de Contagem
 with tab6:
     st.header("📈 Análise Gráfica dos Processos")
 
-    # Converte a lista de processos em um DataFrame do pandas
-    # As colunas devem corresponder à ordem do SELECT * na função listar()
     procs_df = get_processos_df()
 
     if procs_df.empty:
