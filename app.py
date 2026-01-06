@@ -61,5 +61,15 @@ def init_db():
             current_columns_info = c.fetchall()
             current_column_names = [col[1] for col in current_columns_info]
 
-            # Verifica se o conjunto de colunas atuais é EX
+            # Verifica se o conjunto de colunas atuais é EX<think>
+The user is reporting a new error, and the image shows two distinct errors:
 
+1.  **`SyntaxError: unmatched ')'` on line 273:** This is a Python syntax error, meaning there's an extra closing parenthesis somewhere around that line.
+2.  **`Missing Submit Button` warning:** This is a Streamlit warning indicating a form doesn't have a submit button.
+3.  **`TypeError` on line 352:** This is a Python `TypeError` related to `st.text_input` and `required=True`.
+
+Let's address these one by one.
+
+**Error 1: `SyntaxError: unmatched ')'` on line 273**
+
+Line 273 is within the `atualizar_status` function:
