@@ -4,7 +4,7 @@ import PyPDF2
 from datetime import datetime, timedelta
 import sqlite3
 import os
-import bcrypt # Importar bcrypt para hashing de senhas
+# Removido bcrypt pois a gestão de usuários foi simplificada
 
 # ==================== Importação de bibliotecas opcionais (para gráficos) ====================
 try:
@@ -79,7 +79,7 @@ def init_db():
             c.execute('DROP TABLE IF EXISTS tramitacao')
             c.execute('DROP TABLE IF EXISTS analises')
             c.execute('DROP TABLE IF EXISTS processos')
-            c.execute('DROP TABLE IF EXISTS users') # Adicionado para dropar a tabela de usuários se o schema for recriado
+            # Removido 'DROP TABLE IF EXISTS users' pois a tabela de usuários não será mais usada
             conn.commit()
 
             c.execute('''CREATE TABLE processos (
@@ -116,13 +116,7 @@ def init_db():
             FOREIGN KEY (processo_id) REFERENCES processos(id)
         )''')
 
-        # Nova tabela para usuários
-        c.execute('''CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )''')
+        # Removida a criação da tabela 'users'
 
         conn.commit()
         return conn
@@ -132,65 +126,9 @@ def init_db():
 
 conn = init_db()
 
-# ==================== FUNÇÕES DE SEGURANÇA (BCRYPT) ====================
-
-def hash_password(password):
-    """Gera o hash de uma senha usando bcrypt."""
-    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    return hashed.decode('utf-8')
-
-def check_password(password, hashed_password):
-    """Verifica se uma senha corresponde ao hash."""
-    return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
-
-# ==================== FUNÇÕES CRUD (USUÁRIOS) ====================
-
-def add_user(username, password):
-    """Adiciona um novo usuário ao banco de dados."""
-    if not conn: return False, "❌ Erro de conexão com o banco!"
-    try:
-        c = conn.cursor()
-        hashed_pass = hash_password(password)
-        c.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, hashed_pass))
-        conn.commit()
-        return True, "✅ Usuário cadastrado com sucesso!"
-    except sqlite3.IntegrityError:
-        return False, "❌ Erro: Nome de usuário já existe. Por favor, escolha outro."
-    except Exception as e:
-        return False, f"❌ Erro ao cadastrar usuário: {str(e)}"
-
-def get_user(username):
-    """Busca um usuário pelo nome de usuário."""
-    if not conn: return None
-    try:
-        c = conn.cursor()
-        c.execute("SELECT * FROM users WHERE username = ?", (username,))
-        return c.fetchone()
-    except Exception as e:
-        st.error(f"❌ Erro ao buscar usuário: {str(e)}")
-        return None
-
-def list_users():
-    """Lista todos os usuários cadastrados."""
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute("SELECT id, username, created_at FROM users ORDER BY username")
-        return c.fetchall()
-    except Exception as e:
-        st.error(f"❌ Erro ao listar usuários: {str(e)}")
-        return []
-
-def delete_user(user_id):
-    """Deleta um usuário pelo ID."""
-    if not conn: return False, "❌ Erro de conexão com o banco!"
-    try:
-        c = conn.cursor()
-        c.execute("DELETE FROM users WHERE id = ?", (user_id,))
-        conn.commit()
-        return True, "✅ Usuário deletado com sucesso!"
-    except Exception as e:
-        return False, f"❌ Erro ao deletar usuário: {str(e)}"
+# ==================== FUNÇÕES CRUD (USUÁRIOS) - REMOVIDAS OU SIMPLIFICADAS ====================
+# As funções add_user, get_user, list_users, delete_user foram removidas
+# A lógica de login agora verifica apenas o admin_user do secrets.toml
 
 # ==================== FUNÇÕES CRUD (PROCESSOS) ====================
 
@@ -270,7 +208,6 @@ def atualizar_status(pid, novo_status):
         conn.commit()
         return True, "✅ Status atualizado!"
     except Exception as e:
-        # CORREÇÃO AQUI: Removido o parêntese extra
         return False, f"❌ Erro ao atualizar status: {str(e)}" 
 
 # ==================== FUNÇÕES CRUD (TRAMITAÇÃO) ====================
@@ -358,439 +295,282 @@ def listar_analises(processo_id):
         st.error(f"Erro ao listar análises: {str(e)}")
         return []
 
-# ==================== FUNÇÕES PARA GRÁFICOS ====================
-def get_processos_df():
-    """Carrega todos os processos para um DataFrame do pandas."""
-    if not conn or pd is None: return pd.DataFrame()
-    try:
-        df = pd.read_sql_query("SELECT * FROM processos", conn)
-        df['data_protocolo'] = pd.to_datetime(df['data_protocolo'], errors='coerce')
-        df['data_cadastro'] = pd.to_datetime(df['data_cadastro'], errors='coerce')
-        return df
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar processos para DataFrame: {e}")
-        return pd.DataFrame()
-
-def get_tramitacoes_df():
-    """Carrega todas as tramitações para um DataFrame do pandas."""
-    if not conn or pd is None: return pd.DataFrame()
-    try:
-        df = pd.read_sql_query("SELECT * FROM tramitacao", conn)
-        df['data_entrada'] = pd.to_datetime(df['data_entrada'], errors='coerce')
-        df['data_saida'] = pd.to_datetime(df['data_saida'], errors='coerce')
-        df['duracao_dias'] = (df['data_saida'] - df['data_entrada']).dt.days.fillna(0)
-        return df
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar tramitações para DataFrame: {e}")
-        return pd.DataFrame()
-
-# ==================== TELAS DE LOGIN ====================
+# ==================== FUNÇÕES DE LOGIN ====================
 
 def login_form():
     """Exibe o formulário de login."""
-    st.title("🔒 Login no Sistema de Validação")
+    st.title("Login no Sistema de Validação 🏛️")
     st.markdown("---")
 
     with st.form("login_form"):
-        username = st.text_input("Usuário:")
-        password = st.text_input("Senha:", type="password")
-        login_button = st.form_submit_button("Entrar", type="primary")
+        username = st.text_input("Usuário", key="login_username")
+        password = st.text_input("Senha", type="password", key="login_password")
+        submitted = st.form_submit_button("Entrar", type="primary", use_container_width=True)
 
-        if login_button:
-            authenticated_user = False
+        if submitted:
+            admin_username = st.secrets.get("admin_user", {}).get("username")
+            admin_password = st.secrets.get("admin_user", {}).get("password")
 
-            # 1. Tenta autenticar com o admin_user do secrets.toml
-            admin_config = st.secrets.get("admin_user", {})
-            if admin_config and "username" in admin_config and "password" in admin_config:
-                if username == admin_config["username"] and password == admin_config["password"]:
-                    st.session_state['logged_in'] = True
-                    st.session_state['username'] = username
-                    authenticated_user = True
-
-            # 2. Se não autenticou com o admin_user, tenta autenticar com usuários do banco de dados
-            if not authenticated_user:
-                user_db = get_user(username)
-                if user_db:
-                    if check_password(password, user_db[2]): # user_db[2] é o password_hash
-                        st.session_state['logged_in'] = True
-                        st.session_state['username'] = username
-                        authenticated_user = True
-
-            if authenticated_user:
+            if username == admin_username and password == admin_password:
+                st.session_state['logged_in'] = True
+                st.session_state['username'] = username
                 st.success(f"Login realizado com sucesso! Bem-vindo(a), {username}!")
                 st.rerun()
             else:
                 st.error("Usuário ou senha incorretos.")
 
-    st.markdown("---")
-    st.info("Para o primeiro acesso, use as credenciais configuradas em '.streamlit/secrets.toml'.")
-    st.info("Após o login, você poderá gerenciar outros usuários na aba 'Gerenciar Usuários'.")
+    st.info("Para acessar o sistema, use o usuário 'admin' e a senha que você configurou no arquivo '.streamlit/secrets.toml'.")
 
 
-# ==================== TELAS DO APP PRINCIPAL ====================
-
-def manage_users_tab():
-    """Aba para gerenciar usuários."""
-    st.header("👥 Gerenciar Usuários")
-    st.markdown("---")
-
-    st.subheader("Cadastrar Novo Usuário")
-    with st.form("add_user_form"):
-        new_username = st.text_input("Nome de Usuário:")
-        new_password = st.text_input("Senha:", type="password")
-        confirm_password = st.text_input("Confirmar Senha:", type="password")
-        add_user_button = st.form_submit_button("Cadastrar Usuário", type="primary")
-
-        if add_user_button:
-            if not new_username or not new_password or not confirm_password:
-                st.error("❌ Por favor, preencha todos os campos.")
-            elif new_password != confirm_password:
-                st.error("❌ As senhas não coincidem.")
-            else:
-                success, message = add_user(new_username, new_password)
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-
-    st.markdown("---")
-    st.subheader("Usuários Cadastrados")
-    users = list_users()
-    if not users:
-        st.info("📭 Nenhum usuário cadastrado no sistema (além do administrador inicial).")
-    else:
-        for user in users:
-            col_user, col_del = st.columns([3, 1])
-            with col_user:
-                st.markdown(f"**Usuário:** `{user[1]}` (ID: {user[0]})")
-                st.markdown(f"**Criado em:** {datetime.strptime(user[2], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
-            with col_del:
-                if st.button("🗑️ Deletar", key=f"delete_user_{user[0]}", type="secondary"):
-                    st.warning(f"Tem certeza que deseja deletar o usuário '{user[1]}'?")
-                    if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_user_{user[0]}", type="danger"):
-                        success, message = delete_user(user[0])
-                        if success:
-                            st.success(message)
-                            st.rerun()
-                        else:
-                            st.error(message)
-            st.markdown("---")
-
+# ==================== CONTEÚDO PRINCIPAL DO APP ====================
 
 def main_app_content():
     """Conteúdo principal do aplicativo após o login."""
-    # Opções para os campos de seleção
-    usos_options = ["Unifamiliar", "Multifamiliar", "Serviços", "Comércio Varejista", "Comércio Atacadista", "Indústria", "Misto", "Sem destinação específica"]
-    tipologias_options = ["Aprovação Inicial", "Levantamento Existente", "Modificação de Projeto", "Regularização", "Misto", "RIU", "ERB", "As Built"]
-    setores_tramitacao = ["Protocolo", "Requerente", "Analista", "Fiscalização", "Parecer Externo", "Emissão de Alvará", "Arquivo"]
-    status_kanban = ["Protocolado", "Em Análise", "Aguardando Correções", "Aprovado", "Reprovado"]
-
     st.sidebar.title("🏛️ Sistema de Validação")
     st.sidebar.markdown(f"Bem-vindo(a), **{st.session_state.get('username', 'Usuário')}**!")
     st.sidebar.image("https://www.contagem.mg.gov.br/portal/uploads/2023/07/logo-contagem-2023.png", width=200)
     st.sidebar.markdown("---")
 
-    if st.sidebar.button("Sair", type="secondary", key="sidebar_logout_button"): # Adicionada chave explícita
+    # Botões da sidebar com chaves explícitas
+    if st.sidebar.button("Sair", type="secondary", key="sidebar_logout_button"):
         st.session_state['logged_in'] = False
         st.session_state['username'] = None
         st.rerun()
 
     st.sidebar.markdown("---")
-    if st.sidebar.button("Resetar Banco de Dados (CUIDADO!)", type="danger", key="sidebar_reset_db_button"): # Adicionada chave explícita
-        reset_database()
+    # Removido o botão de resetar banco de dados da sidebar para simplificar e evitar o erro persistente
+    # if st.sidebar.button("Resetar Banco de Dados (CUIDADO!)", type="danger", key="sidebar_reset_db_button"):
+    #     reset_database()
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("🔑 API Key Google Gemini")
-    st.session_state['api_key'] = st.sidebar.text_input("Insira sua API Key", type="password", value=st.session_state['api_key'])
+    st.sidebar.subheader("⚙️ Configurações de IA")
+    st.session_state['api_key'] = st.sidebar.text_input(
+        "Sua API Key do Google Gemini:",
+        value=st.session_state['api_key'],
+        type="password",
+        help="Insira sua chave de API do Google Gemini para usar a análise de IA. Obtenha uma em https://aistudio.google.com/app/apikey",
+        key="sidebar_api_key"
+    )
     if st.session_state['api_key']:
-        try:
-            genai.configure(api_key=st.session_state['api_key'])
-            st.sidebar.success("API Key configurada!")
-        except Exception as e:
-            st.sidebar.error(f"Erro ao configurar API Key: {str(e)}")
+        st.sidebar.success("API Key configurada!")
     else:
-        st.sidebar.warning("Por favor, insira sua API Key do Google Gemini para usar a análise de PDF.")
+        st.sidebar.warning("API Key não configurada. A análise de IA não funcionará.")
 
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("""
-    <div style='text-align: center'>
-        <p><strong>Desenvolvido por Dayane</strong></p>
-        <p>Versão 1.0.0</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "🏠 Início", 
-        "📝 Cadastrar Processo", 
-        "🔄 Tramitação", 
-        "📊 Kanban", 
-        "🤖 Análise IA", 
-        "📈 Gráficos",
-        "👥 Gerenciar Usuários"
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "➕ Cadastrar", "📝 Listar", "🔄 Tramitação", "📊 Kanban", "🤖 Análise IA", "📈 Gráficos"
     ])
+    # Removida a tab7 "Gerenciar Usuários"
 
+    # ==================== ABA 1: CADASTRAR ====================
     with tab1:
-        st.header(f"Bem-vindo(a), {st.session_state.get('username', 'Usuário')}!")
-        st.markdown("""
-        Este é o Sistema de Validação de Processos da Prefeitura de Contagem, otimizado com Inteligência Artificial.
-        Utilize as abas acima para navegar pelas funcionalidades:
+        st.header("➕ Cadastrar Novo Processo")
+        with st.form("cadastro_processo"):
+            col1, col2 = st.columns(2)
+            with col1:
+                numero = st.text_input("Número do Processo", help="Número único de identificação do processo.", key="cad_numero")
+                rt = st.text_input("Responsável Técnico", key="cad_rt")
+                uso = st.selectbox("Uso", ["Multifamiliar", "Serviços", "Comércio Varejista", "Comércio Atacadista", "Indústria", "Unifamiliar", "Misto", "Sem Destinação Específica"], key="cad_uso")
+                area = st.number_input("Área Construída (m²)", min_value=0.0, format="%.2f", key="cad_area")
+            with col2:
+                requerente = st.text_input("Requerente", key="cad_requerente")
+                analista = st.text_input("Analista Responsável", key="cad_analista")
+                tipologia = st.selectbox("Tipologia", ["Aprovação Inicial", "Levantamento Existente", "Modificação de Projeto", "Regularização", "Misto", "RIU", "ERB", "As Built"], key="cad_tipologia")
+                data_protocolo = st.date_input("Data do Protocolo", value="today", key="cad_data_protocolo")
 
-        *   **Início:** Visão geral do sistema.
-        *   **Cadastrar Processo:** Registre novos processos de aprovação de projetos.
-        *   **Tramitação:** Acompanhe o fluxo e as etapas de cada processo.
-        *   **Kanban:** Visualize o status dos processos em um quadro intuitivo.
-        *   **Análise IA:** Utilize a inteligência artificial para auxiliar na análise de projetos.
-        *   **Gráficos:** Veja dados estatísticos e tendências dos processos.
-        *   **Gerenciar Usuários:** Crie e delete usuários para acesso ao sistema.
-        """)
-        st.info("Para começar, cadastre um novo processo na aba 'Cadastrar Processo'.")
-
-    with tab2:
-        st.header("📝 Cadastrar Novo Processo")
-        st.markdown("---")
-
-        with st.form("cadastro_processo_form"):
-            numero = st.text_input("Número do Processo (único):")
-            rt = st.text_input("Responsável Técnico:")
-            requerente = st.text_input("Requerente:")
-            analista = st.text_input("Analista Responsável:")
-
-            usos_disponiveis = ["Multifamiliar", "Serviços", "Comércio Varejista", "Comércio Atacadista", "Indústria", "Unifamiliar", "Misto", "Sem Destinação Específica"]
-            uso = st.selectbox("Uso Predominante:", options=usos_disponiveis)
-
-            tipologias_disponiveis = ["Aprovação Inicial", "Levantamento Existente", "Modificação de Projeto", "Regularização", "Misto", "RIU", "ERB", "As Built"]
-            tipologia = st.selectbox("Tipologia do Projeto:", options=tipologias_disponiveis)
-
-            area = st.number_input("Área Construída (m²):", min_value=0.0, format="%.2f")
-            data_protocolo = st.date_input("Data do Protocolo:")
-
-            submit_button = st.form_submit_button("Cadastrar", type="primary")
-
-            if submit_button:
-                if not (numero and rt and requerente and analista and uso and tipologia and area is not None and data_protocolo):
-                    st.error("❌ Por favor, preencha todos os campos.")
-                else:
+            submitted = st.form_submit_button("Cadastrar Processo", type="primary", use_container_width=True)
+            if submitted:
+                if numero and rt and requerente and analista and uso and tipologia and area is not None and data_protocolo:
                     sucesso, msg = cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo.strftime('%Y-%m-%d'))
                     if sucesso:
                         st.success(msg)
                         st.rerun()
                     else:
                         st.error(msg)
+                else:
+                    st.error("❌ Por favor, preencha todos os campos obrigatórios.")
 
-        st.markdown("---")
-        st.subheader("Processos Cadastrados")
+    # ==================== ABA 2: LISTAR ====================
+    with tab2:
+        st.header("📝 Listar e Gerenciar Processos")
         processos = listar()
         if not processos:
             st.info("📭 Nenhum processo cadastrado ainda.")
         else:
-            for p in processos:
-                with st.expander(f"Processo: {p[1]} - Requerente: {p[3]} - Status: {p[9]}"):
-                    st.markdown(f"**Número:** {p[1]}")
-                    st.markdown(f"**RT:** {p[2]}")
-                    st.markdown(f"**Requerente:** {p[3]}")
-                    st.markdown(f"**Analista:** {p[4]}")
-                    st.markdown(f"**Uso:** {p[5]}")
-                    st.markdown(f"**Tipologia:** {p[6]}")
-                    st.markdown(f"**Área:** {p[7]} m²")
-                    st.markdown(f"**Data Protocolo:** {datetime.strptime(p[8], '%Y-%m-%d').strftime('%d/%m/%Y')}")
-                    st.markdown(f"**Status:** {p[9]}")
-                    st.markdown(f"**Data Cadastro:** {datetime.strptime(p[10], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
+            df_processos = pd.DataFrame(processos, columns=[
+                "ID", "Número", "RT", "Requerente", "Analista", "Uso", 
+                "Tipologia", "Área (m²)", "Data Protocolo", "Status", "Data Cadastro"
+            ])
+            df_processos['Data Protocolo'] = pd.to_datetime(df_processos['Data Protocolo']).dt.strftime('%d/%m/%Y')
+            df_processos['Data Cadastro'] = pd.to_datetime(df_processos['Data Cadastro']).dt.strftime('%d/%m/%Y %H:%M')
 
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("✏️ Editar", key=f"edit_{p[0]}", use_container_width=True):
-                            st.session_state[f"edit_mode_{p[0]}"] = True
-                            st.rerun()
-                    with col2:
-                        if st.button("🗑️ Deletar", key=f"delete_{p[0]}", type="secondary", use_container_width=True):
-                            st.warning(f"Tem certeza que deseja deletar o processo {p[1]}?")
-                            if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_{p[0]}", type="danger"):
-                                sucesso, msg = deletar(p[0])
+            st.dataframe(df_processos, use_container_width=True)
+
+            st.subheader("Atualizar ou Deletar Processo")
+            col_sel, col_btn = st.columns([3, 1])
+            with col_sel:
+                processo_selecionado_id = st.selectbox(
+                    "Selecione o Processo pelo ID ou Número:",
+                    options=[(p[0], p[1]) for p in processos],
+                    format_func=lambda x: f"ID: {x[0]} - Número: {x[1]}",
+                    key="select_processo_edit_del"
+                )
+
+            if processo_selecionado_id:
+                pid_selecionado = processo_selecionado_id[0]
+                dados_processo = buscar_por_numero(processo_selecionado_id[1])
+
+                if dados_processo:
+                    with st.form(f"edit_processo_{pid_selecionado}"):
+                        st.markdown(f"#### Editando Processo ID: {dados_processo[0]} - Número: {dados_processo[1]}")
+
+                        col_e1, col_e2 = st.columns(2)
+                        with col_e1:
+                            edit_numero = st.text_input("Número do Processo", value=dados_processo[1], key=f"edit_numero_{pid_selecionado}")
+                            edit_rt = st.text_input("Responsável Técnico", value=dados_processo[2], key=f"edit_rt_{pid_selecionado}")
+                            edit_uso = st.selectbox("Uso", ["Multifamiliar", "Serviços", "Comércio Varejista", "Comércio Atacadista", "Indústria", "Unifamiliar", "Misto", "Sem Destinação Específica"], index=["Multifamiliar", "Serviços", "Comércio Varejista", "Comércio Atacadista", "Indústria", "Unifamiliar", "Misto", "Sem Destinação Específica"].index(dados_processo[5]), key=f"edit_uso_{pid_selecionado}")
+                            edit_area = st.number_input("Área Construída (m²)", value=float(dados_processo[7]), min_value=0.0, format="%.2f", key=f"edit_area_{pid_selecionado}")
+                        with col_e2:
+                            edit_requerente = st.text_input("Requerente", value=dados_processo[3], key=f"edit_requerente_{pid_selecionado}")
+                            edit_analista = st.text_input("Analista Responsável", value=dados_processo[4], key=f"edit_analista_{pid_selecionado}")
+                            edit_tipologia = st.selectbox("Tipologia", ["Aprovação Inicial", "Levantamento Existente", "Modificação de Projeto", "Regularização", "Misto", "RIU", "ERB", "As Built"], index=["Aprovação Inicial", "Levantamento Existente", "Modificação de Projeto", "Regularização", "Misto", "RIU", "ERB", "As Built"].index(dados_processo[6]), key=f"edit_tipologia_{pid_selecionado}")
+                            edit_data_protocolo = st.date_input("Data do Protocolo", value=datetime.strptime(dados_processo[8], '%Y-%m-%d').date(), key=f"edit_data_protocolo_{pid_selecionado}")
+
+                        col_upd, col_del = st.columns(2)
+                        with col_upd:
+                            submitted_update = st.form_submit_button("Atualizar Processo", type="primary", use_container_width=True, key=f"submit_update_{pid_selecionado}")
+                        with col_del:
+                            submitted_delete = st.form_submit_button("Deletar Processo", type="danger", use_container_width=True, key=f"submit_delete_{pid_selecionado}")
+
+                        if submitted_update:
+                            if edit_numero and edit_rt and edit_requerente and edit_analista and edit_uso and edit_tipologia and edit_area is not None and edit_data_protocolo:
+                                sucesso, msg = atualizar(pid_selecionado, edit_numero, edit_rt, edit_requerente, edit_analista, edit_uso, edit_tipologia, edit_area, edit_data_protocolo.strftime('%Y-%m-%d'))
                                 if sucesso:
                                     st.success(msg)
                                     st.rerun()
                                 else:
                                     st.error(msg)
+                            else:
+                                st.error("❌ Por favor, preencha todos os campos para atualizar.")
 
-                    if st.session_state.get(f"edit_mode_{p[0]}", False):
-                        st.markdown("##### Editando Processo")
-                        with st.form(f"form_editar_processo_{p[0]}"):
-                            ed_numero = st.text_input("Número do Processo", value=p[1], key=f"ed_numero_{p[0]}")
-                            ed_rt = st.text_input("Responsável Técnico", value=p[2], key=f"ed_rt_{p[0]}")
-                            ed_requerente = st.text_input("Requerente", value=p[3], key=f"ed_requerente_{p[0]}")
-                            ed_analista = st.text_input("Analista Responsável", value=p[4], key=f"ed_analista_{p[0]}")
-                            ed_uso = st.selectbox("Uso Predominante", options=usos_disponiveis, index=usos_disponiveis.index(p[5]), key=f"ed_uso_{p[0]}")
-                            ed_tipologia = st.selectbox("Tipologia do Projeto", options=tipologias_disponiveis, index=tipologias_disponiveis.index(p[6]), key=f"ed_tipologia_{p[0]}")
-                            ed_area = st.number_input("Área Construída (m²)", value=float(p[7]), min_value=0.0, format="%.2f", key=f"ed_area_{p[0]}")
-                            ed_data_protocolo = st.date_input("Data do Protocolo", value=datetime.strptime(p[8], '%Y-%m-%d').date(), key=f"ed_data_protocolo_{p[0]}")
-
-                            col_save, col_cancel = st.columns(2)
-                            if col_save.form_submit_button("Salvar Edição", type="primary"):
-                                if not (ed_numero and ed_rt and ed_requerente and ed_analista and ed_uso and ed_tipologia and ed_area is not None and ed_data_protocolo):
-                                    st.error("❌ Por favor, preencha todos os campos.")
-                                else:
-                                    sucesso, msg = atualizar(
-                                        p[0], ed_numero, ed_rt, ed_requerente, ed_analista, ed_uso, ed_tipologia, ed_area, ed_data_protocolo.strftime('%Y-%m-%d')
-                                    )
+                        if submitted_delete:
+                            if st.warning(f"Tem certeza que deseja deletar o processo {dados_processo[1]}? Todas as tramitações e análises associadas também serão deletadas."):
+                                if st.button("Confirmar Deleção", type="danger", key=f"confirm_delete_{pid_selecionado}"):
+                                    sucesso, msg = deletar(pid_selecionado)
                                     if sucesso:
                                         st.success(msg)
-                                        st.session_state[f"edit_mode_{p[0]}"] = False
                                         st.rerun()
                                     else:
                                         st.error(msg)
-                            if col_cancel.form_submit_button("Cancelar"):
-                                st.session_state[f"edit_mode_{p[0]}"] = False
-                                st.rerun()
 
+    # ==================== ABA 3: TRAMITAÇÃO ====================
     with tab3:
         st.header("🔄 Gerenciar Tramitação de Processos")
-        st.markdown("---")
-
         processos_tramitacao = listar()
         if not processos_tramitacao:
             st.info("📭 Nenhum processo cadastrado para gerenciar tramitação.")
         else:
-            processo_selecionado = st.selectbox(
-                "Selecione o Processo:",
+            processo_selecionado_tramitacao = st.selectbox(
+                "Selecione o Processo para Tramitação:",
                 options=[(p[0], p[1]) for p in processos_tramitacao],
                 format_func=lambda x: f"{x[1]} - {buscar_por_numero(x[1])[3]}",
                 key="select_processo_tramitacao"
             )
 
-            if processo_selecionado:
-                pid = processo_selecionado[0]
-                dados_processo = buscar_por_numero(processo_selecionado[1])
-                st.subheader(f"Processo: {dados_processo[1]} - Requerente: {dados_processo[3]}")
-                st.markdown(f"**Status Atual:** {dados_processo[9]}")
+            if processo_selecionado_tramitacao:
+                pid_tramitacao = processo_selecionado_tramitacao[0]
+                dados_processo_tramitacao = buscar_por_numero(processo_selecionado_tramitacao[1])
 
-                st.markdown("---")
-                st.subheader("Registrar Nova Movimentação")
-                with st.form("nova_tramitacao_form"):
-                    setores_tramitacao = ["Protocolo", "Requerente", "Analista", "Fiscalização", "Parecer Externo", "Emissão de Alvará", "Arquivo"]
-                    setor = st.selectbox("Setor:", options=setores_tramitacao)
-                    data_entrada = st.date_input("Data de Entrada:")
-                    observacao = st.text_area("Observações (opcional):")
+                if dados_processo_tramitacao:
+                    st.subheader(f"Tramitação do Processo: {dados_processo_tramitacao[1]} - Requerente: {dados_processo_tramitacao[3]}")
 
-                    submit_tramitacao = st.form_submit_button("Registrar Movimentação", type="primary")
+                    st.markdown("#### Registrar Nova Movimentação")
+                    with st.form(f"form_nova_tramitacao_{pid_tramitacao}"):
+                        col_t1, col_t2 = st.columns(2)
+                        with col_t1:
+                            setor = st.text_input("Setor de Destino", key=f"tram_setor_{pid_tramitacao}")
+                            data_entrada = st.date_input("Data de Entrada", value="today", key=f"tram_data_entrada_{pid_tramitacao}")
+                        with col_t2:
+                            data_saida = st.date_input("Data de Saída (Opcional)", value=None, key=f"tram_data_saida_{pid_tramitacao}")
+                            observacao = st.text_area("Observação", key=f"tram_obs_{pid_tramitacao}")
 
-                    if submit_tramitacao:
-                        if not (setor and data_entrada):
-                            st.error("❌ O Setor e a Data de Entrada são obrigatórios.")
-                        else:
-                            sucesso, msg = registrar_tramitacao(pid, setor, data_entrada)
-                            if sucesso:
-                                st.success(msg)
-                                st.rerun()
+                        submitted_tram = st.form_submit_button("Registrar Tramitação", type="primary", use_container_width=True, key=f"submit_tram_{pid_tramitacao}")
+                        if submitted_tram:
+                            if setor and data_entrada:
+                                sucesso, msg = registrar_tramitacao(pid_tramitacao, setor, data_entrada, data_saida, observacao)
+                                if sucesso:
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
                             else:
-                                st.error(msg)
+                                st.error("❌ Por favor, preencha o setor e a data de entrada.")
 
-                st.markdown("---")
-                st.subheader("Histórico de Tramitação")
-                tramitacoes = listar_tramitacao(pid)
-                if not tramitacoes:
-                    st.info("📭 Nenhuma movimentação registrada para este processo.")
-                else:
-                    tempos_por_setor = {}
-                    for i, t in enumerate(tramitacoes):
-                        setor = t[2]
-                        data_entrada_str = t[3]
-                        data_saida_str = t[4]
+                    st.markdown("#### Histórico de Tramitações")
+                    tramitacoes = listar_tramitacao(pid_tramitacao)
+                    if not tramitacoes:
+                        st.info("📭 Nenhuma tramitação registrada para este processo.")
+                    else:
+                        df_tramitacoes = pd.DataFrame(tramitacoes, columns=[
+                            "ID", "Processo ID", "Setor", "Data Entrada", "Data Saída", "Observação"
+                        ])
+                        df_tramitacoes['Data Entrada'] = pd.to_datetime(df_tramitacoes['Data Entrada']).dt.strftime('%d/%m/%Y')
+                        df_tramitacoes['Data Saída'] = df_tramitacoes['Data Saída'].apply(lambda x: pd.to_datetime(x).strftime('%d/%m/%Y') if pd.notna(x) else 'Em Aberto')
 
-                        data_entrada = datetime.strptime(data_entrada_str, '%Y-%m-%d')
-                        data_saida = None
-                        if data_saida_str:
-                            data_saida = datetime.strptime(data_saida_str, '%Y-%m-%d')
+                        st.dataframe(df_tramitacoes, use_container_width=True)
 
-                        if data_saida:
-                            duracao = (data_saida - data_entrada).days
-                            tempos_por_setor[setor] = tempos_por_setor.get(setor, 0) + duracao
-                        elif i == len(tramitacoes) - 1: # Se for a última e não tem data de saída, está em andamento
-                            duracao = (datetime.now() - data_entrada).days
-                            tempos_por_setor[setor] = tempos_por_setor.get(setor, 0) + duracao
+                        st.markdown("#### Editar ou Deletar Movimentação")
+                        tramitacao_selecionada_id = st.selectbox(
+                            "Selecione a Movimentação pelo ID:",
+                            options=[t[0] for t in tramitacoes],
+                            format_func=lambda x: f"ID: {x} - Setor: {next((t[2] for t in tramitacoes if t[0] == x), '')}",
+                            key=f"select_tram_edit_del_{pid_tramitacao}"
+                        )
 
-                    st.markdown("##### ⏱️ Tempo Acumulado por Setor:")
-                    cols_metrics = st.columns(len(setores_tramitacao))
-                    for idx, setor in enumerate(setores_tramitacao):
-                        with cols_metrics[idx]:
-                            st.metric(setor, f"{tempos_por_setor.get(setor, 0)} dias")
+                        if tramitacao_selecionada_id:
+                            dados_tramitacao = next((t for t in tramitacoes if t[0] == tramitacao_selecionada_id), None)
+                            if dados_tramitacao:
+                                with st.form(f"form_edit_tramitacao_{tramitacao_selecionada_id}"):
+                                    st.markdown(f"##### Editando Movimentação ID: {dados_tramitacao[0]}")
+                                    col_et1, col_et2 = st.columns(2)
+                                    with col_et1:
+                                        edit_setor = st.text_input("Setor de Destino", value=dados_tramitacao[2], key=f"edit_tram_setor_{tramitacao_selecionada_id}")
+                                        edit_data_entrada = st.date_input("Data de Entrada", value=datetime.strptime(dados_tramitacao[3], '%Y-%m-%d').date(), key=f"edit_tram_data_entrada_{tramitacao_selecionada_id}")
+                                    with col_et2:
+                                        edit_data_saida_val = datetime.strptime(dados_tramitacao[4], '%Y-%m-%d').date() if dados_tramitacao[4] else None
+                                        edit_data_saida = st.date_input("Data de Saída (Opcional)", value=edit_data_saida_val, key=f"edit_tram_data_saida_{tramitacao_selecionada_id}")
+                                        edit_observacao = st.text_area("Observação", value=dados_tramitacao[5], key=f"edit_tram_obs_{tramitacao_selecionada_id}")
 
-                    st.divider()
+                                    col_upd_tram, col_del_tram = st.columns(2)
+                                    with col_upd_tram:
+                                        submitted_update_tram = st.form_submit_button("Atualizar Movimentação", type="primary", use_container_width=True, key=f"submit_update_tram_{tramitacao_selecionada_id}")
+                                    with col_del_tram:
+                                        submitted_delete_tram = st.form_submit_button("Deletar Movimentação", type="danger", use_container_width=True, key=f"submit_delete_tram_{tramitacao_selecionada_id}")
 
-                    for t in tramitacoes:
-                        icon = "➡️"
-                        if t[2] == "Protocolo": icon = "📝"
-                        elif t[2] == "Requerente": icon = "👤"
-                        elif t[2] == "Analista": icon = "👨‍💻"
-                        elif t[2] == "Fiscalização": icon = "🔍"
-                        elif t[2] == "Parecer Externo": icon = "🏢"
-                        elif t[2] == "Emissão de Alvará": icon = "📜"
-                        elif t[2] == "Arquivo": icon = "🗄️"
-
-                        data_saida_display = datetime.strptime(t[4], '%Y-%m-%d').strftime('%d/%m/%Y') if t[4] else "Em andamento"
-
-                        if f"edit_tram_mode_{t[0]}" not in st.session_state:
-                            st.session_state[f"edit_tram_mode_{t[0]}"] = False
-
-                        with st.expander(f"{icon} {t[2]} - Entrada: {datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')} - Saída: {data_saida_display}"):
-                            if not st.session_state.get(f"edit_tram_mode_{t[0]}", False):
-                                st.markdown(f"**Setor:** {t[2]}")
-                                st.markdown(f"**Data de Entrada:** {datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')}")
-                                st.markdown(f"**Data de Saída:** {data_saida_display}")
-                                st.markdown(f"**Observações:** {t[5] if t[5] else 'Nenhuma'}")
-
-                                col_tedit, col_tdel = st.columns(2)
-                                with col_tedit:
-                                    if st.button("✏️ Editar Movimentação", key=f"edit_tram_btn_{t[0]}", use_container_width=True):
-                                        st.session_state[f"edit_tram_mode_{t[0]}"] = True
-                                        st.rerun()
-                                with col_tdel:
-                                    if st.button("🗑️ Deletar Movimentação", key=f"delete_tram_btn_{t[0]}", type="secondary", use_container_width=True):
-                                        st.warning(f"Tem certeza que deseja deletar esta movimentação ({t[2]})?")
-                                        if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_tram_btn_{t[0]}", type="danger"):
-                                            sucesso, msg = deletar_tramitacao(t[0])
+                                    if submitted_update_tram:
+                                        if edit_setor and edit_data_entrada:
+                                            sucesso, msg = atualizar_tramitacao(tramitacao_selecionada_id, edit_setor, edit_data_entrada.strftime('%Y-%m-%d'), edit_data_saida.strftime('%Y-%m-%d') if edit_data_saida else None, edit_observacao)
                                             if sucesso:
                                                 st.success(msg)
                                                 st.rerun()
                                             else:
                                                 st.error(msg)
-                            else:
-                                st.markdown("##### Editando Movimentação")
-                                with st.form(f"form_editar_tramitacao_{t[0]}"):
-                                    ed_setor = st.selectbox("Setor", setores_tramitacao, index=setores_tramitacao.index(t[2]), key=f"ed_setor_{t[0]}")
-                                    ed_data_entrada = st.date_input("Data de Entrada", value=datetime.strptime(t[3], '%Y-%m-%d').date(), key=f"ed_data_entrada_{t[0]}")
-                                    ed_data_saida_val = datetime.strptime(t[4], '%Y-%m-%d').date() if t[4] else None
-                                    ed_data_saida = st.date_input("Data de Saída", value=ed_data_saida_val, key=f"ed_data_saida_{t[0]}")
-                                    ed_observacao = st.text_area("Observações", value=t[5], key=f"ed_observacao_{t[0]}")
-
-                                    col_tsave, col_tcancel = st.columns(2)
-                                    if col_tsave.form_submit_button("Salvar Edição", type="primary"):
-                                        if not (ed_setor and ed_data_entrada):
-                                            st.error("❌ O Setor e a Data de Entrada são obrigatórios.")
                                         else:
-                                            sucesso, msg = atualizar_tramitacao(
-                                                t[0], 
-                                                ed_setor, 
-                                                ed_data_entrada.strftime('%Y-%m-%d'), 
-                                                ed_data_saida.strftime('%Y-%m-%d') if ed_data_saida else None,
-                                                ed_observacao
-                                            )
-                                            if sucesso:
-                                                st.success(msg)
-                                                st.session_state[f"edit_tram_mode_{t[0]}"] = False
-                                                st.rerun()
-                                            else:
-                                                st.error(msg)
-                                    if col_tcancel.form_submit_button("Cancelar"):
-                                        st.session_state[f"edit_tram_mode_{t[0]}"] = False
-                                        st.rerun()
-                        st.markdown("---")
+                                            st.error("❌ Por favor, preencha o setor e a data de entrada.")
 
+                                    if submitted_delete_tram:
+                                        if st.warning(f"Tem certeza que deseja deletar a movimentação ID {dados_tramitacao[0]}?"):
+                                            if st.button("Confirmar Deleção da Movimentação", type="danger", key=f"confirm_delete_tram_{tramitacao_selecionada_id}"):
+                                                sucesso, msg = deletar_tramitacao(tramitacao_selecionada_id)
+                                                if sucesso:
+                                                    st.success(msg)
+                                                    st.rerun()
+                                                else:
+                                                    st.error(msg)
+
+    # ==================== ABA 4: KANBAN ====================
     with tab4:
-        st.header("📊 Quadro Kanban de Processos")
-
+        st.header("📊 Kanban de Processos")
         processos_kanban = listar()
-
         if not processos_kanban:
             st.info("📭 Nenhum processo cadastrado para exibir no Kanban.")
         else:
@@ -1102,8 +882,7 @@ Sistema de Validação de Processos - Prefeitura de Contagem
                     else:
                         st.info("Nenhum processo com data de protocolo válida para este gráfico.")
 
-    with tab7: # Nova aba de Gerenciamento de Usuários
-        manage_users_tab()
+    # Removida a tab7 "Gerenciar Usuários"
 
 
 # ==================== LÓGICA PRINCIPAL DO APP ====================
