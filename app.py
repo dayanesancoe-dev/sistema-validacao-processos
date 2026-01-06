@@ -70,11 +70,6 @@ conn, cursor = init_db()
 # Funções do sistema
 def cadastrar_processo(numero, requerente, rt, analista, uso, area):
     try:
-    cursor.execute('ALTER TABLE legislacoes ADD COLUMN pdf_nome TEXT')
-    cursor.execute('ALTER TABLE legislacoes ADD COLUMN pdf_conteudo BLOB')
-    conn.commit()
-except sqlite3.OperationalError:
-    pass  # Colunas já existem
         cursor.execute('''
             INSERT INTO processos (numero_processo, requerente, rt, analista, uso, area_total)
             VALUES (?, ?, ?, ?, ?, ?)
