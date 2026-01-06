@@ -18,8 +18,52 @@ st.markdown("**Prefeitura de Contagem** — Liberação de Alvarás de Construç
 # Inicializar banco de dados
 @st.cache_resource
 def init_db():
-    conn = sqlite3.connect(':memory:')
+    conn = sqlite3.connect('database.db', check_same_thread=False)
     cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero_processo TEXT UNIQUE NOT NULL,
+            requerente TEXT NOT NULL,
+            rt TEXT NOT NULL,
+            analista TEXT NOT NULL,
+            uso TEXT NOT NULL,
+            area_total REAL NOT NULL,
+            estatus TEXT DEFAULT 'Em análise',
+            data_protocolo TEXT DEFAULT CURRENT_TIMESTAMP,
+            data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS legislacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT UNIQUE NOT NULL,
+            descricao TEXT,
+            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS regras_legislacao (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            legislacao_id INTEGER NOT NULL,
+            artigo TEXT NOT NULL,
+            descricao TEXT NOT NULL,
+            campo_validacao TEXT NOT NULL,
+            operador TEXT NOT NULL,
+            valor_referencia REAL NOT NULL,
+            mensagem_erro TEXT,
+            FOREIGN KEY (legislacao_id) REFERENCES legislacoes(id)
+        )
+    ''')
+
+    conn.commit()
+    return conn, cursor
+
+# EXECUTAR BANCO
+conn, cursor = init_db()
 
     # Criar tabelas
     cursor.execute('''
