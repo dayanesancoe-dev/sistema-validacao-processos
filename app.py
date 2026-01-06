@@ -417,7 +417,7 @@ def login_form():
 
             if authenticated_user:
                 st.success(f"Login realizado com sucesso! Bem-vindo(a), {username}!")
-                st.rerun() # Alterado para st.rerun()
+                st.rerun()
             else:
                 st.error("Usuário ou senha incorretos.")
 
@@ -479,19 +479,45 @@ def manage_users_tab():
 
 def main_app_content():
     """Conteúdo principal do aplicativo após o login."""
+    # Opções para os campos de seleção
+    usos_options = ["Unifamiliar", "Multifamiliar", "Serviços", "Comércio Varejista", "Comércio Atacadista", "Indústria", "Misto", "Sem destinação específica"]
+    tipologias_options = ["Aprovação Inicial", "Levantamento Existente", "Modificação de Projeto", "Regularização", "Misto", "RIU", "ERB", "As Built"]
+    setores_tramitacao = ["Protocolo", "Requerente", "Analista", "Fiscalização", "Parecer Externo", "Emissão de Alvará", "Arquivo"]
+    status_kanban = ["Protocolado", "Em Análise", "Aguardando Correções", "Aprovado", "Reprovado"]
+
     st.sidebar.title("🏛️ Sistema de Validação")
     st.sidebar.markdown(f"Bem-vindo(a), **{st.session_state.get('username', 'Usuário')}**!")
     st.sidebar.image("https://www.contagem.mg.gov.br/portal/uploads/2023/07/logo-contagem-2023.png", width=200)
     st.sidebar.markdown("---")
 
-    if st.sidebar.button("Sair", type="secondary"):
+    if st.sidebar.button("Sair", type="secondary", key="sidebar_logout_button"): # Adicionada chave explícita
         st.session_state['logged_in'] = False
         st.session_state['username'] = None
         st.rerun()
 
     st.sidebar.markdown("---")
-    if st.sidebar.button("Resetar Banco de Dados (CUIDADO!)", type="danger"):
+    if st.sidebar.button("Resetar Banco de Dados (CUIDADO!)", type="danger", key="sidebar_reset_db_button"): # Adicionada chave explícita
         reset_database()
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🔑 API Key Google Gemini")
+    st.session_state['api_key'] = st.sidebar.text_input("Insira sua API Key", type="password", value=st.session_state['api_key'])
+    if st.session_state['api_key']:
+        try:
+            genai.configure(api_key=st.session_state['api_key'])
+            st.sidebar.success("API Key configurada!")
+        except Exception as e:
+            st.sidebar.error(f"Erro ao configurar API Key: {str(e)}")
+    else:
+        st.sidebar.warning("Por favor, insira sua API Key do Google Gemini para usar a análise de PDF.")
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("""
+    <div style='text-align: center'>
+        <p><strong>Desenvolvido por Dayane</strong></p>
+        <p>Versão 1.0.0</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "🏠 Início", 
@@ -500,7 +526,7 @@ def main_app_content():
         "📊 Kanban", 
         "🤖 Análise IA", 
         "📈 Gráficos",
-        "👥 Gerenciar Usuários" # Nova aba
+        "👥 Gerenciar Usuários"
     ])
 
     with tab1:
