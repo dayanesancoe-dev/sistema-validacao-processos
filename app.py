@@ -61,7 +61,7 @@ def init_db():
             current_columns_info = c.fetchall()
             current_column_names = [col[1] for col in current_columns_info]
 
-            # Verifica se TODAS as colunas esperadas estão presentes E se não há colunas extras inesperadas
+            # Verifica se o conjunto de colunas atuais é EXATAMENTE igual ao esperado
             if not (set(expected_processos_column_names) == set(current_column_names) and 
                     len(expected_processos_column_names) == len(current_column_names)):
                 schema_outdated = True
@@ -136,7 +136,7 @@ def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_proto
     except sqlite3.IntegrityError:
         return False, "❌ Erro: Já existe um processo com este número!"
     except Exception as e:
-        return False, f"❌ Erro ao cadastrar processo: {str(e)}"
+        return False, f"❌ Erro ao cadastrar: {str(e)}"
 
 def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
     """Atualiza um processo existente no banco de dados."""
@@ -192,13 +192,6 @@ def registrar_tramitacao(processo_id, setor, data_entrada, data_saida=None, obse
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
-        # Primeiro, fechar a tramitação anterior se houver uma aberta
-        c.execute('''UPDATE tramitacao 
-                    SET data_saida = ? 
-                    WHERE processo_id = ? AND data_saida IS NULL''', 
-                 (data_entrada, processo_id))
-
-        # Adicionar a nova tramitação
         c.execute('''INSERT INTO tramitacao 
                     (processo_id, setor, data_entrada, data_saida, observacao) 
                     VALUES (?, ?, ?, ?, ?)''',
@@ -277,7 +270,7 @@ def atualizar_status(processo_id, novo_status):
         conn.commit()
         return True, "✅ Status atualizado!"
     except Exception as e:
-        return False, f"❌ Erro ao atualizar status: {str(e)}"
+        return False, f"❌ Erro ao atualizar status: {str(e)}")
 
 def get_processos_df():
     """Carrega todos os processos para um DataFrame do pandas."""
@@ -316,6 +309,7 @@ with st.sidebar:
         reset_database()
 
     st.subheader("🔑 Chave de API Google Gemini")
+    # Usa st.session_state['api_key'] como valor padrão
     api_key_input = st.text_input("Insira sua API Key:", type="password", value=st.session_state['api_key'])
     if api_key_input:
         st.session_state['api_key'] = api_key_input
@@ -516,6 +510,14 @@ with tab3:
 
                     if st.form_submit_button("Registrar Movimentação", type="primary"):
                         if data_entrada_nova:
+                            # Primeiro, fechar a tramitação anterior se houver uma aberta
+                            c = conn.cursor()
+                            c.execute('''UPDATE tramitacao 
+                                        SET data_saida = ? 
+                                        WHERE processo_id = ? AND data_saida IS NULL''', 
+                                     (data_entrada_nova.strftime('%Y-%m-%d'), pid_tramitacao))
+                            conn.commit()
+
                             sucesso, msg = registrar_tramitacao(
                                 pid_tramitacao, 
                                 setor_novo, 
@@ -569,12 +571,13 @@ with tab3:
                 for t in tramitacoes:
                     # t: (id, processo_id, setor, data_entrada, data_saida, observacao)
                     icon = "➡️"
-                    if t[2] == "Arquivo": icon = "🗄️"
-                    elif t[2] == "Emissão de Alvará": icon = "📜"
-                    elif t[2] == "Fiscalização": icon = "🔍"
-                    elif t[2] == "Analista": icon = "👨‍💻"
+                    if t[2] == "Protocolo": icon = "📝"
                     elif t[2] == "Requerente": icon = "👤"
-                    elif t[2] == "Protocolo": icon = "📝"
+                    elif t[2] == "Analista": icon = "👨‍💻"
+                    elif t[2] == "Fiscalização": icon = "🔍"
+                    elif t[2] == "Parecer Externo": icon = "🏢"
+                    elif t[2] == "Emissão de Alvará": icon = "📜"
+                    elif t[2] == "Arquivo": icon = "🗄️"
 
                     data_saida_display = datetime.strptime(t[4], '%Y-%m-%d').strftime('%d/%m/%Y') if t[4] else "Em andamento"
 
