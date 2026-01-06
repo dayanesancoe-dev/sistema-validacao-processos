@@ -60,16 +60,27 @@ def init_db():
         )
     ''')
 
-    # Adicionar colunas de PDF se não existirem
+    # Adicionar colunas de PDF nas legislações se não existirem
     try:
         cursor.execute('ALTER TABLE legislacoes ADD COLUMN pdf_nome TEXT')
     except sqlite3.OperationalError:
-        pass  # Coluna já existe
+        pass
 
     try:
         cursor.execute('ALTER TABLE legislacoes ADD COLUMN pdf_conteudo BLOB')
     except sqlite3.OperationalError:
-        pass  # Coluna já existe
+        pass
+
+    # Adicionar colunas de PDF do projeto nos processos se não existirem
+    try:
+        cursor.execute('ALTER TABLE processos ADD COLUMN projeto_pdf_nome TEXT')
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute('ALTER TABLE processos ADD COLUMN projeto_pdf_conteudo BLOB')
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     return conn, cursor
@@ -89,6 +100,30 @@ def cadastrar_processo(numero, requerente, rt, analista, uso, area):
     except sqlite3.IntegrityError:
         st.error(f"❌ Processo {numero} já existe!")
         return False
+
+def anexar_pdf_projeto(processo_id, pdf_file):
+    try:
+        pdf_bytes = pdf_file.read()
+        pdf_nome = pdf_file.name
+        cursor.execute('''
+            UPDATE processos 
+            SET projeto_pdf_nome = ?, projeto_pdf_conteudo = ?
+            WHERE id = ?
+        ''', (pdf_nome, pdf_bytes, processo_id))
+        conn.commit()
+        st.success(f"✅ PDF do projeto anexado com sucesso!")
+        return True
+    except Exception as e:
+        st.error(f"❌ Erro ao anexar PDF: {str(e)}")
+        return False
+
+def obter_pdf_projeto(processo_id):
+    try:
+        cursor.execute('SELECT projeto_pdf_nome, projeto_pdf_conteudo FROM processos WHERE id = ?', (processo_id,))
+        resultado = cursor.fetchone()
+        return resultado if resultado else (None, None)
+    except sqlite3.OperationalError:
+        return (None, None)
 
 def listar_processos():
     cursor.execute('SELECT id, numero_processo, requerente, rt, uso, area_total, estatus FROM processos')
@@ -126,7 +161,6 @@ def obter_pdf_legislacao(legislacao_id):
         resultado = cursor.fetchone()
         return resultado if resultado else (None, None)
     except sqlite3.OperationalError:
-        # Colunas de PDF não existem ainda
         return (None, None)
 
 def adicionar_regra(leg_id, artigo, descricao, campo, operador, valor, mensagem):
@@ -359,12 +393,71 @@ with tab3:
                                          key="select_leg_validar")
             leg_id = int(leg_selecionada.split()[1])
 
-        if st.button("🔍 Validar", key="btn_validar"):
+        st.divider()
+
+        # Seção de anexar PDF do projeto
+        st.subheader("📎 Anexar PDF do Projeto")
+
+        col_upload, col_download = st.columns([3, 1])
+
+        with col_upload:
+            pdf_projeto = st.file_uploader("Selecione o PDF do projeto arquitetônico", 
+                                          type=['pdf'], 
+                                          key="upload_pdf_projeto")
+
+            if pdf_projeto:
+                if st.button("💾 Salvar PDF do Projeto", key="btn_salvar_pdf_projeto"):
+                    anexar_pdf_projeto(proc_id, pdf_projeto)
+
+        with col_download:
+            # Verificar se já existe PDF anexado
+            pdf_nome_projeto, pdf_conteudo_projeto = obter_pdf_projeto(proc_id)
+            if pdf_conteudo_projeto:
+                st.download_button(
+                    label="📄 Baixar Projeto",
+                    data=pdf_conteudo_projeto,
+                    file_name=pdf_nome_projeto,
+                    mime="application/pdf",
+                    key="download_pdf_projeto"
+                )
+            else:
+                st.info("Nenhum PDF anexado")
+
+        st.divider()
+
+        if st.button("🔍 Validar Processo", key="btn_validar"):
             resultado = validar_processo(proc_id, leg_id)
 
             if resultado:
                 st.divider()
                 st.subheader(f"📋 Resultado da Validação — Processo {resultado['numero_processo']}")
+
+                # Mostrar PDFs anexados
+                col_pdf1, col_pdf2 = st.columns(2)
+
+                with col_pdf1:
+                    pdf_nome_leg, pdf_conteudo_leg = obter_pdf_legislacao(leg_id)
+                    if pdf_conteudo_leg:
+                        st.download_button(
+                            label="📜 Baixar Legislação",
+                            data=pdf_conteudo_leg,
+                            file_name=pdf_nome_leg,
+                            mime="application/pdf",
+                            key="download_leg_validacao"
+                        )
+
+                with col_pdf2:
+                    pdf_nome_proj, pdf_conteudo_proj = obter_pdf_projeto(proc_id)
+                    if pdf_conteudo_proj:
+                        st.download_button(
+                            label="📐 Baixar Projeto",
+                            data=pdf_conteudo_proj,
+                            file_name=pdf_nome_proj,
+                            mime="application/pdf",
+                            key="download_proj_validacao"
+                        )
+
+                st.divider()
 
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Total de Regras", resultado['total_regras'])
