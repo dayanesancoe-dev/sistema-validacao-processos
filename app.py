@@ -28,7 +28,7 @@ if 'logged_in' not in st.session_state:
 
 if st.session_state['db_reset_needed_rerun']:
     st.session_state['db_reset_needed_rerun'] = False
-    st.experimental_rerun()
+    st.rerun() # Alterado para st.rerun()
 
 # ==================== BANCO DE DADOS ====================
 
@@ -40,7 +40,7 @@ def reset_database():
         st.cache_resource.clear()
         st.session_state['db_reset_needed_rerun'] = True
         st.success("✅ Banco de dados resetado com sucesso! A página será recarregada.")
-        st.experimental_rerun()
+        st.rerun() # Alterado para st.rerun()
     except Exception as e:
         st.error(f"❌ Erro ao resetar o banco de dados: {str(e)}")
         return None
@@ -341,7 +341,7 @@ def login_form():
                         st.session_state['username'] = username
                         authenticated_user = True
                         st.success(f"Login realizado com sucesso! Bem-vindo(a), {username}!")
-                        st.experimental_rerun()
+                        st.rerun() # Alterado para st.rerun()
                         break
 
             if not authenticated_user:
@@ -384,7 +384,7 @@ def main_app_content():
         if st.button("🚪 Sair", type="primary"):
             st.session_state['logged_in'] = False
             st.session_state['username'] = ''
-            st.experimental_rerun()
+            st.rerun() # Alterado para st.rerun()
 
         st.markdown("---")
         st.markdown("""
@@ -430,7 +430,7 @@ def main_app_content():
                         if processo_recem_cadastrado:
                             registrar_tramitacao(processo_recem_cadastrado[0], "Protocolo", datetime.now().strftime('%Y-%m-%d'), None, "Cadastro inicial")
                             st.info("Primeira tramitação (Protocolo) registrada automaticamente.")
-                        st.experimental_rerun()
+                        st.rerun() # Alterado para st.rerun()
                     else:
                         st.error(msg)
 
@@ -472,7 +472,7 @@ def main_app_content():
                         with col_edit:
                             if st.button("✏️ Editar Processo", key=f"edit_proc_{p[0]}", use_container_width=True):
                                 st.session_state[f"edit_mode_{p[0]}"] = True
-                                st.experimental_rerun()
+                                st.rerun() # Alterado para st.rerun()
 
                         with col_del:
                             if st.button("🗑️ Deletar Processo", key=f"delete_proc_{p[0]}", type="secondary", use_container_width=True):
@@ -481,7 +481,7 @@ def main_app_content():
                                     sucesso, msg = deletar(p[0])
                                     if sucesso:
                                         st.success(msg)
-                                        st.experimental_rerun()
+                                        st.rerun() # Alterado para st.rerun()
                                     else:
                                         st.error(msg)
 
@@ -515,13 +515,13 @@ def main_app_content():
 
                             if st.form_submit_button("Salvar Alterações", type="primary"):
                                 if not ed_numero or not ed_rt or not ed_requerente or not ed_analista or not ed_uso or not ed_tipologia or ed_area <= 0 or not ed_data_protocolo:
-                                    st.error("Por favor, preencha todos os campos obrigatórios e verifique a área.")
+                                    st.error("❌ Por favor, preencha todos os campos obrigatórios e verifique a área.")
                                 else:
                                     sucesso, msg = atualizar(p[0], ed_numero, ed_rt, ed_requerente, ed_analista, ed_uso, ed_tipologia, ed_area, ed_data_protocolo.strftime('%Y-%m-%d'))
                                     if sucesso:
                                         st.success(msg)
                                         st.session_state[f"edit_mode_{p[0]}"] = False
-                                        st.experimental_rerun()
+                                        st.rerun() # Alterado para st.rerun()
                                     else:
                                         st.error(msg)
 
@@ -579,7 +579,7 @@ def main_app_content():
                                 )
                                 if sucesso:
                                     st.success(msg)
-                                    st.experimental_rerun()
+                                    st.rerun() # Alterado para st.rerun()
                                 else:
                                     st.error(msg)
 
@@ -643,7 +643,7 @@ def main_app_content():
                                 with col_tedit:
                                     if st.button("✏️ Editar Movimentação", key=f"edit_tram_btn_{t[0]}", use_container_width=True):
                                         st.session_state[f"edit_tram_mode_{t[0]}"] = True
-                                        st.experimental_rerun()
+                                        st.rerun() # Alterado para st.rerun()
                                 with col_tdel:
                                     if st.button("🗑️ Deletar Movimentação", key=f"delete_tram_btn_{t[0]}", type="secondary", use_container_width=True):
                                         st.warning(f"Tem certeza que deseja deletar esta movimentação ({t[2]})?")
@@ -651,7 +651,7 @@ def main_app_content():
                                             sucesso, msg = deletar_tramitacao(t[0])
                                             if sucesso:
                                                 st.success(msg)
-                                                st.experimental_rerun()
+                                                st.rerun() # Alterado para st.rerun()
                                             else:
                                                 st.error(msg)
                             else:
@@ -678,12 +678,12 @@ def main_app_content():
                                             if sucesso:
                                                 st.success(msg)
                                                 st.session_state[f"edit_tram_mode_{t[0]}"] = False
-                                                st.experimental_rerun()
+                                                st.rerun() # Alterado para st.rerun()
                                             else:
                                                 st.error(msg)
                                     if col_tcancel.form_submit_button("Cancelar"):
                                         st.session_state[f"edit_tram_mode_{t[0]}"] = False
-                                        st.experimental_rerun()
+                                        st.rerun() # Alterado para st.rerun()
                         st.markdown("---")
 
     # ==================== ABA 4: KANBAN ====================
@@ -728,13 +728,13 @@ def main_app_content():
                         if current_status_index > 0:
                             if st.button(f"⬅️ Mover para {status_kanban[current_status_index-1]}", key=f"move_prev_{p[0]}"):
                                 sucesso, msg = atualizar_status(p[0], status_kanban[current_status_index-1])
-                                if sucesso: st.experimental_rerun()
+                                if sucesso: st.rerun() # Alterado para st.rerun()
                                 else: st.error(msg)
 
                         if current_status_index < len(status_kanban) - 1:
                             if st.button(f"➡️ Mover para {status_kanban[current_status_index+1]}", key=f"move_next_{p[0]}"):
                                 sucesso, msg = atualizar_status(p[0], status_kanban[current_status_index+1])
-                                if sucesso: st.experimental_rerun()
+                                if sucesso: st.rerun() # Alterado para st.rerun()
                                 else: st.error(msg)
                         st.markdown("---")
 
@@ -774,7 +774,7 @@ def main_app_content():
                         proj = st.file_uploader("PDFs do Projeto", type=['pdf'], accept_multiple_files=True, key="proj_upload")
                     with col_leg:
                         st.subheader("📜 Legislação Municipal")
-                        leg = st.file_uploader("PDFs do Projeto", type=['pdf'], accept_multiple_files=True, key="leg_upload") # Corrigido para PDF da Legislação
+                        leg = st.file_uploader("PDFs da Legislação", type=['pdf'], accept_multiple_files=True, key="leg_upload")
 
                     st.divider()
                     regras = st.text_area("📏 Regras Específicas a Verificar (Artigos da Lei, etc.):", height=150, 
