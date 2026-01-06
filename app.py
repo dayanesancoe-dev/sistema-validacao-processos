@@ -61,6 +61,7 @@ def init_db():
         ]
 
         schema_outdated = False
+
         c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='processos'")
         table_exists = c.fetchone()
 
@@ -124,7 +125,7 @@ def init_db():
 
 conn = init_db()
 
-# ==================== FUNÇÕES CRUD (PROCESSOS) ====================
+# ==================== FUNÇÕES DE DADOS ====================
 
 def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
     """Cadastra um novo processo no banco de dados."""
@@ -138,7 +139,7 @@ def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_proto
         conn.commit()
         return True, "✅ Processo cadastrado com sucesso!"
     except sqlite3.IntegrityError:
-        return False, "❌ Erro: Já existe um processo com este número!"
+        return False, "❌ Erro: Já existe um processo com este número. Por favor, use um número único."
     except Exception as e:
         return False, f"❌ Erro ao cadastrar: {str(e)}"
 
@@ -176,18 +177,18 @@ def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_
         conn.commit()
         return True, "✅ Processo atualizado com sucesso!"
     except sqlite3.IntegrityError:
-        return False, "❌ Erro: Número de processo já existe!"
+        return False, "❌ Erro: Número de processo já existe! Por favor, use um número único."
     except Exception as e:
         return False, f"❌ Erro ao atualizar processo: {str(e)}"
 
 def deletar(pid):
-    """Deleta um processo e suas tramitações e análises associadas."""
+    """Deleta um processo e suas tramitações/análises associadas."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
-        c.execute('DELETE FROM tramitacao WHERE processo_id=?', (pid,))
-        c.execute('DELETE FROM analises WHERE processo_id=?', (pid,))
-        c.execute('DELETE FROM processos WHERE id=?', (pid,))
+        c.execute('DELETE FROM analises WHERE processo_id = ?', (pid,))
+        c.execute('DELETE FROM tramitacao WHERE processo_id = ?', (pid,))
+        c.execute('DELETE FROM processos WHERE id = ?', (pid,))
         conn.commit()
         return True, "✅ Processo deletado com sucesso!"
     except Exception as e:
@@ -211,14 +212,13 @@ def registrar_tramitacao(processo_id, setor, data_entrada, data_saida=None, obse
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
-        # Fecha a tramitação anterior (se houver) com a data de entrada da nova
-        c.execute('''UPDATE tramitacao
-                    SET data_saida = ?
-                    WHERE processo_id = ? AND data_saida IS NULL''',
+        c.execute('''UPDATE tramitacao 
+                    SET data_saida = ? 
+                    WHERE processo_id = ? AND data_saida IS NULL''', 
                  (data_entrada, processo_id))
 
-        c.execute('''INSERT INTO tramitacao
-                    (processo_id, setor, data_entrada, data_saida, observacao)
+        c.execute('''INSERT INTO tramitacao 
+                    (processo_id, setor, data_entrada, data_saida, observacao) 
                     VALUES (?, ?, ?, ?, ?)''',
                  (processo_id, setor, data_entrada, data_saida, observacao))
         conn.commit()
@@ -242,12 +242,12 @@ def atualizar_tramitacao(tid, setor, data_entrada, data_saida, observacao):
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
-        c.execute('''UPDATE tramitacao
+        c.execute('''UPDATE tramitacao 
                     SET setor=?, data_entrada=?, data_saida=?, observacao=?
                     WHERE id=?''',
                  (setor, data_entrada, data_saida, observacao, tid))
         conn.commit()
-        return True, "✅ Movimentação atualizada!"
+        return True, "✅ Movimentação de tramitação atualizada com sucesso!"
     except Exception as e:
         return False, f"❌ Erro ao atualizar movimentação: {str(e)}"
 
@@ -269,8 +269,7 @@ def salvar_analise(processo_id, resultado, status):
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
-        c.execute('''INSERT INTO analises
-                    (processo_id, resultado, status)
+        c.execute('''INSERT INTO analises (processo_id, resultado, status) 
                     VALUES (?, ?, ?)''',
                  (processo_id, resultado, status))
         conn.commit()
@@ -290,7 +289,6 @@ def listar_analises(processo_id):
         return []
 
 # ==================== FUNÇÕES PARA GRÁFICOS ====================
-
 def get_processos_df():
     """Carrega todos os processos para um DataFrame do pandas."""
     if not conn or pd is None: return pd.DataFrame()
@@ -320,6 +318,7 @@ def get_tramitacoes_df():
 def send_email_request(username_req, password_req, contact_email):
     recipient_email = "dayanesancoe@gmail.com" # Seu e-mail para receber as solicitações
 
+    # Verifica se as configurações SMTP estão presentes em st.secrets
     if "smtp" not in st.secrets or \
        "sender_email" not in st.secrets["smtp"] or \
        "sender_password" not in st.secrets["smtp"] or \
@@ -339,15 +338,29 @@ def send_email_request(username_req, password_req, contact_email):
     msg['Subject'] = "Solicitação de Criação de Usuário no Sistema de Validação"
 
     body = f"""
-    Uma nova solicitação de criação de usuário foi recebida:
-
-    Usuário Desejado: {username_req}
-    Senha Desejada: {password_req}
-    E-mail para Contato: {contact_email}
-
-    Por favor, revise e autorize a criação deste usuário.
+    <html>
+    <body>
+        <p>Uma nova solicitação de acesso foi feita para o Sistema de Validação de Processos:</p>
+        <ul>
+            <li><b>Usuário Desejado:</b> {username_req}</li>
+            <li><b>Senha Desejada:</b> {password_req}</li>
+            <li><b>E-mail para Contato:</b> {contact_email}</li>
+        </ul>
+        <p>Por favor, revise a solicitação e, se aprovada, adicione as credenciais ao arquivo <code>.streamlit/secrets.toml</code> na seção <code>[login]</code>.</p>
+        <p>Exemplo:</p>
+        <pre>
+[login]
+username = "admin"
+password = "admin123"
+{username_req}_username = "{username_req}"
+{username_req}_password = "{password_req}"
+        </pre>
+        <p>Atenciosamente,</p>
+        <p>Sistema de Validação de Processos</p>
+    </body>
+    </html>
     """
-    msg.attach(MIMEText(body, 'plain'))
+    msg.attach(MIMEText(body, 'html')) # Envia como HTML para melhor formatação
 
     try:
         with smtplib.SMTP(smtp_server, smtp_port) as server:
@@ -363,27 +376,24 @@ def send_email_request(username_req, password_req, contact_email):
 # ==================== TELAS DE LOGIN E REGISTRO ====================
 
 def login_form():
+    """Exibe o formulário de login."""
     st.title("🔒 Login no Sistema de Validação")
     st.markdown("---")
 
     with st.form("login_form"):
         username = st.text_input("Usuário:")
         password = st.text_input("Senha:", type="password")
-        submit_button = st.form_submit_button("Entrar", type="primary")
+        login_button = st.form_submit_button("Entrar", type="primary")
 
-        st.markdown("---")
-        if st.button("Solicitar Novo Usuário", key="show_register_button"):
-            st.session_state['show_register_form'] = True
-            st.experimental_rerun()
+        if login_button:
+            # Verifica as credenciais no secrets.toml
+            login_config = st.secrets.get("login", {}) # Usa .get para evitar KeyError se [login] não existir
 
-        if submit_button:
-            if "login" in st.secrets and \
-               "username" in st.secrets["login"] and \
-               "password" in st.secrets["login"]:
-
-                if username == st.secrets["login"]["username"] and \
-                   password == st.secrets["login"]["password"]:
+            if "username" in login_config and "password" in login_config:
+                # Autenticação para o usuário principal (admin)
+                if username == login_config["username"] and password == login_config["password"]:
                     st.session_state['logged_in'] = True
+                    st.session_state['username'] = username
                     st.success("Login realizado com sucesso!")
                     st.experimental_rerun()
                 else:
@@ -392,7 +402,13 @@ def login_form():
                 st.error("❌ Credenciais de login não configuradas em '.streamlit/secrets.toml'.")
                 st.info("Por favor, crie o arquivo '.streamlit/secrets.toml' com as credenciais de login.")
 
+    st.markdown("---")
+    if st.button("Solicitar Novo Usuário", key="show_register_button", use_container_width=True):
+        st.session_state['show_register_form'] = True
+        st.experimental_rerun()
+
 def register_request_form():
+    """Exibe o formulário para solicitar acesso."""
     st.title("📝 Solicitar Novo Usuário")
     st.markdown("---")
 
@@ -408,13 +424,13 @@ def register_request_form():
                 st.error("❌ Por favor, preencha todos os campos.")
             else:
                 if send_email_request(username_req, password_req, contact_email):
-                    st.success("✅ Sua solicitação foi enviada para Dayane. Você será notificado por e-mail quando for aprovada.")
+                    st.success("✅ Sua solicitação de acesso foi enviada para Dayane. Você será notificado por e-mail quando for aprovada.")
                     st.session_state['show_register_form'] = False # Volta para a tela de login
                     st.experimental_rerun()
                 else:
                     st.error("❌ Falha ao enviar a solicitação. Verifique as configurações SMTP e tente novamente.")
 
-        if st.button("Voltar para Login", key="back_to_login_button"):
+        if st.button("Voltar para Login", key="back_to_login_button", use_container_width=True):
             st.session_state['show_register_form'] = False
             st.experimental_rerun()
 
@@ -429,7 +445,7 @@ def main_app_content():
     # Renderiza a sidebar
     with st.sidebar:
         st.image("https://www.contagem.mg.gov.br/portal/uploads/2023/07/logo-contagem-2023.png", width=200)
-        st.title("⚙️ Configurações")
+        st.title(f"Bem-vindo(a), {st.session_state.get('username', 'Usuário')}!")
         st.markdown("---")
 
         # Entrada da API Key do Gemini
@@ -451,6 +467,7 @@ def main_app_content():
         st.markdown("---")
         if st.button("🚪 Sair", type="primary"):
             st.session_state['logged_in'] = False
+            st.session_state['username'] = ''
             st.experimental_rerun()
 
         st.markdown("---")
@@ -468,25 +485,27 @@ def main_app_content():
     with tab1:
         st.header("➕ Cadastrar Novo Processo")
 
-        with st.form("cadastro_processo"):
+        with st.form("form_cadastro_processo"):
+            st.subheader("Dados do Processo")
+            numero = st.text_input("Número do Processo", help="Ex: 12345/2024") 
+            rt = st.text_input("Responsável Técnico (RT)")
+            requerente = st.text_input("Requerente")
+            analista = st.text_input("Analista Responsável")
+
             col1, col2 = st.columns(2)
             with col1:
-                numero = st.text_input("Número do Processo", help="Ex: 12345/2024") 
-                rt = st.text_input("Responsável Técnico (RT)")
-                requerente = st.text_input("Nome do Requerente")
-                analista = st.text_input("Nome do Analista Responsável")
-            with col2:
                 uso = st.selectbox("Uso", usos_options)
+            with col2:
                 tipologia = st.selectbox("Tipologia", tipologias_options)
-                area = st.number_input("Área Construída (m²)", min_value=0.0, value=0.0, step=0.01)
-                data_protocolo = st.date_input("Data do Protocolo", value="today")
 
-            st.divider()
-            submit_button = st.form_submit_button("Salvar Processo", type="primary", use_container_width=True)
+            area = st.number_input("Área (m²)", min_value=0.0, format="%.2f")
+            data_protocolo = st.date_input("Data do Protocolo", value="today")
+
+            submit_button = st.form_submit_button("Cadastrar Processo", type="primary")
 
             if submit_button:
                 if not (numero and rt and requerente and analista and uso and tipologia and area > 0 and data_protocolo):
-                    st.error("❌ Por favor, preencha todos os campos obrigatórios e garanta que a área seja maior que zero.")
+                    st.error("❌ Por favor, preencha todos os campos obrigatórios e verifique a área.")
                 else:
                     sucesso, msg = cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo.strftime('%Y-%m-%d'))
                     if sucesso:
@@ -501,42 +520,41 @@ def main_app_content():
 
     # ==================== ABA 2: GERENCIAR ====================
     with tab2:
-        st.header("📋 Gerenciar Processos")
+        st.header("📋 Gerenciamento de Processos")
 
         processos = listar()
 
         if not processos:
-            st.info("📭 Nenhum processo cadastrado ainda. Use a aba 'Cadastrar' para adicionar.")
+            st.info("📭 Nenhum processo cadastrado ainda. Use a aba 'Cadastrar' para adicionar novos processos.")
         else:
-            st.subheader(f"Total de Processos: {len(processos)}")
+            st.subheader("Lista de Processos Cadastrados")
             for p in processos:
-                if f"edit_mode_{p[0]}" not in st.session_state:
-                    st.session_state[f"edit_mode_{p[0]}"] = False
+                status_icon = "🔵"
+                if p[9] == "Aprovado": status_icon = "✅"
+                elif p[9] == "Reprovado": status_icon = "❌"
+                elif p[9] == "Aguardando Correções": status_icon = "🟠"
+                elif p[9] == "Em Análise": status_icon = "🔎"
 
-                with st.expander(f"Processo: {p[1]} - Requerente: {p[3]} - Status: {p[9]}"):
-                    if not st.session_state.get(f"edit_mode_{p[0]}", False):
-                        st.markdown(f"**Número:** {p[1]}")
-                        st.markdown(f"**RT:** {p[2]}")
-                        st.markdown(f"**Requerente:** {p[3]}")
-                        st.markdown(f"**Analista:** {p[4]}")
-                        st.markdown(f"**Uso:** {p[5]}")
-                        st.markdown(f"**Tipologia:** {p[6]}")
-                        st.markdown(f"**Área:** {p[7]} m²")
-                        st.markdown(f"**Data Protocolo:** {datetime.strptime(p[8], '%Y-%m-%d').strftime('%d/%m/%Y')}")
-                        st.markdown(f"**Status:** {p[9]}")
-                        st.markdown(f"**Cadastrado em:** {datetime.strptime(p[10], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
+                with st.expander(f"{status_icon} **{p[1]}** - {p[3]} ({p[6]})"):
+                    st.markdown(f"**Número:** {p[1]}")
+                    st.markdown(f"**RT:** {p[2]}")
+                    st.markdown(f"**Requerente:** {p[3]}")
+                    st.markdown(f"**Analista:** {p[4]}")
+                    st.markdown(f"**Uso:** {p[5]}")
+                    st.markdown(f"**Tipologia:** {p[6]}")
+                    st.markdown(f"**Área (m²):** {p[7]:.2f}")
+                    st.markdown(f"**Data Protocolo:** {datetime.strptime(p[8], '%Y-%m-%d').strftime('%d/%m/%Y')}")
+                    st.markdown(f"**Status:** {p[9]}")
+                    st.markdown(f"**Cadastrado em:** {datetime.strptime(p[10], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
 
-                        col_edit, col_del = st.columns(2)
-
-                        with col_edit:
-                            if st.button("✏️ Editar Processo", key=f"edit_btn_{p[0]}", use_container_width=True):
-                                st.session_state[f"edit_mode_{p[0]}"] = True
-                                st.experimental_rerun()
-
-                        with col_del:
-                            if st.button("🗑️ Deletar Processo", key=f"delete_btn_{p[0]}", type="secondary", use_container_width=True):
-                                st.warning(f"Tem certeza que deseja deletar o processo {p[1]}? Esta ação é irreversível e também apagará todas as tramitações e análises associadas.")
-                                if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_btn_{p[0]}", type="danger"):
+                    col_edit, col_del = st.columns(2)
+                    with col_edit:
+                        if st.button("✏️ Editar Processo", key=f"edit_proc_{p[0]}", use_container_width=True):
+                            st.session_state[f"edit_mode_{p[0]}"] = not st.session_state.get(f"edit_mode_{p[0]}", False)
+                    with col_del:
+                        if st.button("🗑️ Deletar Processo", key=f"delete_proc_{p[0]}", type="secondary", use_container_width=True):
+                            if st.warning(f"Tem certeza que deseja deletar o processo {p[1]}? Esta ação é irreversível e deletará todas as tramitações e análises associadas."):
+                                if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_proc_{p[0]}", type="danger"):
                                     sucesso, msg = deletar(p[0])
                                     if sucesso:
                                         st.success(msg)
@@ -544,8 +562,8 @@ def main_app_content():
                                     else:
                                         st.error(msg)
 
-                    else:
-                        st.subheader(f"✏️ Editando Processo {p[1]}")
+                    if st.session_state.get(f"edit_mode_{p[0]}", False):
+                        st.markdown("##### Editando Processo")
                         with st.form(f"form_editar_processo_{p[0]}"):
                             ed_numero = st.text_input("Número do Processo", value=p[1], key=f"ed_numero_{p[0]}")
                             ed_rt = st.text_input("RT", value=p[2], key=f"ed_rt_{p[0]}")
@@ -564,7 +582,7 @@ def main_app_content():
                                 current_tipologia_index = 0
                             ed_tipologia = st.selectbox("Tipologia", tipologias_options, index=current_tipologia_index, key=f"ed_tipologia_{p[0]}")
 
-                            ed_area = st.number_input("Área (m²)", value=float(p[7]), min_value=0.0, key=f"ed_area_{p[0]}")
+                            ed_area = st.number_input("Área (m²)", value=float(p[7]), min_value=0.0, format="%.2f", key=f"ed_area_{p[0]}")
 
                             try:
                                 default_date_protocolo = datetime.strptime(p[8], '%Y-%m-%d').date()
@@ -572,10 +590,9 @@ def main_app_content():
                                 default_date_protocolo = datetime.now().date()
                             ed_data_protocolo = st.date_input("Data do Protocolo", value=default_date_protocolo, key=f"ed_data_protocolo_{p[0]}")
 
-                            col_save, col_cancel = st.columns(2)
-                            if col_save.form_submit_button("Salvar Alterações", type="primary"):
-                                if not (ed_numero and ed_rt and ed_requerente and ed_analista and ed_uso and ed_tipologia and ed_area > 0 and ed_data_protocolo):
-                                    st.error("❌ Por favor, preencha todos os campos obrigatórios e garanta que a área seja maior que zero.")
+                            if st.form_submit_button("Salvar Alterações", type="primary"):
+                                if not ed_numero or not ed_rt or not ed_requerente or not ed_analista or not ed_uso or not ed_tipologia or ed_area <= 0 or not ed_data_protocolo:
+                                    st.error("Por favor, preencha todos os campos obrigatórios e verifique a área.")
                                 else:
                                     sucesso, msg = atualizar(p[0], ed_numero, ed_rt, ed_requerente, ed_analista, ed_uso, ed_tipologia, ed_area, ed_data_protocolo.strftime('%Y-%m-%d'))
                                     if sucesso:
@@ -584,13 +601,10 @@ def main_app_content():
                                         st.experimental_rerun()
                                     else:
                                         st.error(msg)
-                            if col_cancel.form_submit_button("Cancelar"):
-                                st.session_state[f"edit_mode_{p[0]}"] = False
-                                st.experimental_rerun()
 
     # ==================== ABA 3: TRAMITAÇÃO ====================
     with tab3:
-        st.header("🔄 Gerenciar Tramitação de Processos")
+        st.header("🔄 Gerenciamento de Tramitação")
 
         processos_tramitacao = listar()
         if not processos_tramitacao:
@@ -648,7 +662,7 @@ def main_app_content():
 
                 st.divider()
                 st.markdown("#### Histórico de Tramitação")
-                tramitacoes = listar_tramitacao(pid_tramitacao) # Usar listar_tramitacao para ordenar DESC
+                tramitacoes = listar_tramitacao(pid_tramitacao)
 
                 if not tramitacoes:
                     st.info("📭 Nenhuma movimentação registrada para este processo.")
@@ -864,13 +878,13 @@ def main_app_content():
                                     for pdf in proj:
                                         reader = PyPDF2.PdfReader(pdf)
                                         for page in reader.pages:
-                                            txt_proj += page.extract_text() + "\n"
+                                            txt_proj += page.extract_text() or ""
 
                                     txt_leg = ""
                                     for pdf in leg:
                                         reader = PyPDF2.PdfReader(pdf)
                                         for page in reader.pages:
-                                            txt_leg += page.extract_text() + "\n"
+                                            txt_leg += page.extract_text() or ""
 
                                     model = None
                                     for nome in ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']:
@@ -885,64 +899,43 @@ def main_app_content():
                                         st.error("❌ Nenhum modelo do Gemini disponível. Verifique sua API Key e a disponibilidade dos modelos.")
                                         st.stop()
 
-                                    prompt = f"""Você é um analista técnico especializado em projetos arquitetônicos da Prefeitura de Contagem - MG.
+                                    prompt = f"""Você é um analista técnico especializado em projetos arquitetônicos para aprovação em prefeituras.
+Analise o texto do projeto arquitetônico fornecido abaixo, considerando as seguintes informações do processo:
 
-**DADOS DO PROCESSO:**
-- Número: {dados[1]}
-- RT: {dados[2]}
-- Requerente: {dados[3]}
-- Analista: {dados[4]}
-- Uso: {dados[5]}
-- Tipologia: {dados[6]}
-- Área: {dados[7]}m²
-- Data do Protocolo: {datetime.strptime(dados[8], '%Y-%m-%d').strftime('%d/%m/%Y')}
-- Status Atual: {dados[9]}
+- **Número do Processo:** {dados[1]}
+- **Responsável Técnico (RT):** {dados[2]}
+- **Requerente:** {dados[3]}
+- **Analista:** {dados[4]}
+- **Uso Predominante:** {dados[5]}
+- **Tipologia do Projeto:** {dados[6]}
+- **Área Construída (m²):** {dados[7]}
+- **Data do Protocolo:** {datetime.strptime(dados[8], '%Y-%m-%d').strftime('%d/%m/%Y')}
 
-**LEGISLAÇÃO MUNICIPAL APLICÁVEL:**
-{txt_leg[:4000]}
+Com base no texto do projeto e nas informações acima, forneça um parecer técnico detalhado.
+O parecer deve incluir:
+1.  **Resumo do Projeto:** Uma breve descrição do que o projeto propõe.
+2.  **Conformidade:** Pontos em que o projeto parece estar em conformidade com normas gerais de construção e urbanismo (ex: recuos, taxa de ocupação, coeficiente de aproveitamento, ventilação, iluminação, acessibilidade, etc.).
+3.  **Não Conformidade/Pendências:** Pontos que precisam de correção ou esclarecimento para a aprovação. Seja específico sobre quais itens estão em desacordo ou quais informações estão faltando.
+4.  **Recomendação Final:**
+    *   Se o projeto parece estar em total conformidade e pronto para aprovação, termine o parecer com a frase **"RECOMENDAÇÃO: PROJETO APROVADO"**.
+    *   Se o projeto possui pendências ou não conformidades que exigem correção, termine o parecer com a frase **"RECOMENDAÇÃO: PROJETO REPROVADO"**.
+    *   Se a análise for inconclusiva devido à falta de informações críticas no PDF ou se o PDF for apenas parcial, termine o parecer com a frase **"RECOMENDAÇÃO: ANÁLISE INCONCLUSIVA"**.
 
-**REGRAS ESPECÍFICAS A VERIFICAR:**
-{regras}
-
-**PROJETO ARQUITETÔNICO SUBMETIDO:**
-{txt_proj[:6000]}
-
-**INSTRUÇÕES PARA ANÁLISE:**
-Analise detalhadamente o projeto arquitetônico e verifique sua conformidade com a legislação municipal de Contagem.
-
-**IMPORTANTE:**
-- SEMPRE cite o artigo específico da lei.
-- Seja técnico, objetivo e preciso.
-- Identifique problemas com localização no projeto quando possível.
-- Use linguagem formal de parecer técnico.
-
-**FORMATO DA RESPOSTA:**
-
-## ✅ CONFORMIDADES
-(liste o que está conforme, citando artigos)
-
-## ❌ NÃO CONFORMIDADES - PONTOS A CORRIGIR
-(para cada violação: artigo violado, problema, localização no projeto, correção necessária)
-
-## ⚠️ PONTOS DE ATENÇÃO
-(itens que necessitam verificação presencial ou documentação complementar)
-
-## 🔧 RECOMENDAÇÕES TÉCNICAS
-(sugestões detalhadas para correção)
-
-## 📊 PARECER TÉCNICO FINAL
-Emita parecer conclusivo: **APROVADO** ou **REPROVADO** (justifique tecnicamente citando artigos).
+---
+**TEXTO DO PROJETO ARQUITETÔNICO:**
+{txt_proj[:15000]} # Limita o texto para evitar estouro de token
+---
 """
 
                                     resposta = model.generate_content(prompt)
+                                    texto_resposta = resposta.text
 
-                                    texto_resposta = resposta.text.upper()
                                     status_analise = "INCONCLUSIVO"
-                                    if "APROVADO" in texto_resposta and "REPROVADO" not in texto_resposta:
+                                    if "APROVADO" in texto_resposta.upper() and "REPROVADO" not in texto_resposta.upper():
                                         status_analise = "APROVADO"
                                         st.success("✅ PROJETO APROVADO")
                                         atualizar_status(dados[0], "Aprovado")
-                                    elif "REPROVADO" in texto_resposta:
+                                    elif "REPROVADO" in texto_resposta.upper():
                                         status_analise = "REPROVADO"
                                         st.error("❌ PROJETO REPROVADO")
                                         atualizar_status(dados[0], "Reprovado")
