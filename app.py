@@ -218,19 +218,26 @@ with tab1:
 with tab2:
     st.header("Gerenciar Legislações")
     col1, col2 = st.columns(2)
-  with col1:
-    st.subheader("➕ Cadastrar Legislação")
-    nome_leg = st.text_input("Nome da legislação", placeholder="Ex: Lei de Uso e Ocupação do Solo")
-    desc_leg = st.text_area("Descrição", placeholder="Descrição da legislação")
+  with col2:
+    st.subheader("📚 Legislações Cadastradas")  # ← 4 espaços
+    legislacoes = listar_legislacoes()  # ← 4 espaços
+    if legislacoes:  # ← 4 espaços
+        for leg in legislacoes:  # ← 8 espaços (dentro do if)
+            col_a, col_b = st.columns([4, 1])  # ← 12 espaços (dentro do for)
+            col_a.write(f"**ID {leg[0]}** - {leg[1]}")  # ← 12 espaços
 
-    # ADICIONE ISSO:
-    pdf_file = st.file_uploader("📎 Anexar PDF da Lei", type=['pdf'], key="upload_pdf_leg")
-
-    if st.button("Cadastrar Legislação", key="btn_cadastrar_leg"):
-        if nome_leg and desc_leg:
-            cadastrar_legislacao(nome_leg, desc_leg, pdf_file)
-        else:
-            st.error("❌ Preencha todos os campos!")
+            # Verificar se tem PDF
+            pdf_nome, pdf_conteudo = obter_pdf_legislacao(leg[0])  # ← 12 espaços
+            if pdf_conteudo:  # ← 12 espaços
+                col_b.download_button(  # ← 16 espaços (dentro do if interno)
+                    label="📄 PDF",
+                    data=pdf_conteudo,
+                    file_name=pdf_nome,
+                    mime="application/pdf",
+                    key=f"download_pdf_{leg[0]}"
+                )
+    else:
+        st.info("Nenhuma legislação cadastrada ainda.")  # ← 8 espaços
 def obter_pdf_legislacao(legislacao_id):
     cursor.execute('SELECT pdf_nome, pdf_conteudo FROM legislacoes WHERE id = ?', (legislacao_id,))
     resultado = cursor.fetchone()
