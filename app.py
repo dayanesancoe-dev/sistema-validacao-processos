@@ -247,7 +247,7 @@ def atualizar_tramitacao(tid, setor, data_entrada, data_saida, observacao):
                     WHERE id=?''',
                  (setor, data_entrada, data_saida, observacao, tid))
         conn.commit()
-        return True, "✅ Movimentação de tramitação atualizada com sucesso!"
+        return True, "✅ Movimentação atualizada!"
     except Exception as e:
         return False, f"❌ Erro ao atualizar movimentação: {str(e)}"
 
@@ -318,7 +318,6 @@ def get_tramitacoes_df():
 def send_email_request(username_req, password_req, contact_email):
     recipient_email = "dayanesancoe@gmail.com" # Seu e-mail para receber as solicitações
 
-    # Verifica se as configurações SMTP estão presentes em st.secrets
     if "smtp" not in st.secrets or \
        "sender_email" not in st.secrets["smtp"] or \
        "sender_password" not in st.secrets["smtp"] or \
@@ -360,11 +359,11 @@ password = "admin123"
     </body>
     </html>
     """
-    msg.attach(MIMEText(body, 'html')) # Envia como HTML para melhor formatação
+    msg.attach(MIMEText(body, 'html'))
 
     try:
         with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls() # Inicia a criptografia TLS
+            server.starttls()
             server.login(sender_email, sender_password)
             server.send_message(msg)
         return True
@@ -386,11 +385,9 @@ def login_form():
         login_button = st.form_submit_button("Entrar", type="primary")
 
         if login_button:
-            # Verifica as credenciais no secrets.toml
-            login_config = st.secrets.get("login", {}) # Usa .get para evitar KeyError se [login] não existir
+            login_config = st.secrets.get("login", {})
 
             if "username" in login_config and "password" in login_config:
-                # Autenticação para o usuário principal (admin)
                 if username == login_config["username"] and password == login_config["password"]:
                     st.session_state['logged_in'] = True
                     st.session_state['username'] = username
@@ -403,6 +400,7 @@ def login_form():
                 st.info("Por favor, crie o arquivo '.streamlit/secrets.toml' com as credenciais de login.")
 
     st.markdown("---")
+    # Botão "Solicitar Novo Usuário" movido para FORA do formulário
     if st.button("Solicitar Novo Usuário", key="show_register_button", use_container_width=True):
         st.session_state['show_register_form'] = True
         st.experimental_rerun()
@@ -425,14 +423,16 @@ def register_request_form():
             else:
                 if send_email_request(username_req, password_req, contact_email):
                     st.success("✅ Sua solicitação de acesso foi enviada para Dayane. Você será notificado por e-mail quando for aprovada.")
-                    st.session_state['show_register_form'] = False # Volta para a tela de login
+                    st.session_state['show_register_form'] = False
                     st.experimental_rerun()
                 else:
                     st.error("❌ Falha ao enviar a solicitação. Verifique as configurações SMTP e tente novamente.")
 
-        if st.button("Voltar para Login", key="back_to_login_button", use_container_width=True):
-            st.session_state['show_register_form'] = False
-            st.experimental_rerun()
+    st.markdown("---")
+    # Botão "Voltar para Login" movido para FORA do formulário
+    if st.button("Voltar para Login", key="back_to_login_button", use_container_width=True):
+        st.session_state['show_register_form'] = False
+        st.experimental_rerun()
 
 # ==================== CONTEÚDO PRINCIPAL DO APP (APÓS LOGIN) ====================
 def main_app_content():
@@ -448,7 +448,6 @@ def main_app_content():
         st.title(f"Bem-vindo(a), {st.session_state.get('username', 'Usuário')}!")
         st.markdown("---")
 
-        # Entrada da API Key do Gemini
         st.subheader("🔑 API Key Google Gemini")
         st.session_state['api_key'] = st.text_input("Insira sua API Key", type="password", value=st.session_state['api_key'])
         if st.session_state['api_key']:
@@ -505,7 +504,7 @@ def main_app_content():
 
             if submit_button:
                 if not (numero and rt and requerente and analista and uso and tipologia and area > 0 and data_protocolo):
-                    st.error("❌ Por favor, preencha todos os campos obrigatórios e verifique a área.")
+                    st.error("❌ Por favor, preencha todos os campos obrigatórios e garanta que a área seja maior que zero.")
                 else:
                     sucesso, msg = cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo.strftime('%Y-%m-%d'))
                     if sucesso:
@@ -536,24 +535,31 @@ def main_app_content():
                 elif p[9] == "Em Análise": status_icon = "🔎"
 
                 with st.expander(f"{status_icon} **{p[1]}** - {p[3]} ({p[6]})"):
-                    st.markdown(f"**Número:** {p[1]}")
-                    st.markdown(f"**RT:** {p[2]}")
-                    st.markdown(f"**Requerente:** {p[3]}")
-                    st.markdown(f"**Analista:** {p[4]}")
-                    st.markdown(f"**Uso:** {p[5]}")
-                    st.markdown(f"**Tipologia:** {p[6]}")
-                    st.markdown(f"**Área (m²):** {p[7]:.2f}")
-                    st.markdown(f"**Data Protocolo:** {datetime.strptime(p[8], '%Y-%m-%d').strftime('%d/%m/%Y')}")
-                    st.markdown(f"**Status:** {p[9]}")
-                    st.markdown(f"**Cadastrado em:** {datetime.strptime(p[10], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
+                    if f"edit_mode_{p[0]}" not in st.session_state:
+                        st.session_state[f"edit_mode_{p[0]}"] = False
 
-                    col_edit, col_del = st.columns(2)
-                    with col_edit:
-                        if st.button("✏️ Editar Processo", key=f"edit_proc_{p[0]}", use_container_width=True):
-                            st.session_state[f"edit_mode_{p[0]}"] = not st.session_state.get(f"edit_mode_{p[0]}", False)
-                    with col_del:
-                        if st.button("🗑️ Deletar Processo", key=f"delete_proc_{p[0]}", type="secondary", use_container_width=True):
-                            if st.warning(f"Tem certeza que deseja deletar o processo {p[1]}? Esta ação é irreversível e deletará todas as tramitações e análises associadas."):
+                    if not st.session_state.get(f"edit_mode_{p[0]}", False):
+                        st.markdown(f"**Número:** {p[1]}")
+                        st.markdown(f"**RT:** {p[2]}")
+                        st.markdown(f"**Requerente:** {p[3]}")
+                        st.markdown(f"**Analista:** {p[4]}")
+                        st.markdown(f"**Uso:** {p[5]}")
+                        st.markdown(f"**Tipologia:** {p[6]}")
+                        st.markdown(f"**Área (m²):** {p[7]:.2f}")
+                        st.markdown(f"**Data Protocolo:** {datetime.strptime(p[8], '%Y-%m-%d').strftime('%d/%m/%Y')}")
+                        st.markdown(f"**Status:** {p[9]}")
+                        st.markdown(f"**Cadastrado em:** {datetime.strptime(p[10], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
+
+                        col_edit, col_del = st.columns(2)
+
+                        with col_edit:
+                            if st.button("✏️ Editar Processo", key=f"edit_proc_{p[0]}", use_container_width=True):
+                                st.session_state[f"edit_mode_{p[0]}"] = True
+                                st.experimental_rerun()
+
+                        with col_del:
+                            if st.button("🗑️ Deletar Processo", key=f"delete_proc_{p[0]}", type="secondary", use_container_width=True):
+                                st.warning(f"Tem certeza que deseja deletar o processo {p[1]}? Esta ação é irreversível e deletará todas as tramitações e análises associadas.")
                                 if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_proc_{p[0]}", type="danger"):
                                     sucesso, msg = deletar(p[0])
                                     if sucesso:
@@ -562,8 +568,8 @@ def main_app_content():
                                     else:
                                         st.error(msg)
 
-                    if st.session_state.get(f"edit_mode_{p[0]}", False):
-                        st.markdown("##### Editando Processo")
+                    else:
+                        st.subheader(f"✏️ Editando Processo {p[1]}")
                         with st.form(f"form_editar_processo_{p[0]}"):
                             ed_numero = st.text_input("Número do Processo", value=p[1], key=f"ed_numero_{p[0]}")
                             ed_rt = st.text_input("RT", value=p[2], key=f"ed_rt_{p[0]}")
@@ -928,6 +934,7 @@ O parecer deve incluir:
 """
 
                                     resposta = model.generate_content(prompt)
+
                                     texto_resposta = resposta.text
 
                                     status_analise = "INCONCLUSIVO"
