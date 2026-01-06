@@ -21,7 +21,8 @@ def init_db():
     conn = sqlite3.connect('database.db', check_same_thread=False)
     cursor = conn.cursor()
 
-    cursor.execute('''
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS processos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             numero_processo TEXT UNIQUE NOT NULL,
@@ -34,18 +35,22 @@ def init_db():
             data_protocolo TEXT DEFAULT CURRENT_TIMESTAMP,
             data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
         )
-    ''')
+        """
+    )
 
-    cursor.execute('''
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS legislacoes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT UNIQUE NOT NULL,
             descricao TEXT,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP
         )
-    ''')
+        """
+    )
 
-    cursor.execute('''
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS regras_legislacao (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             legislacao_id INTEGER NOT NULL,
@@ -57,12 +62,13 @@ def init_db():
             mensagem_erro TEXT,
             FOREIGN KEY (legislacao_id) REFERENCES legislacoes(id)
         )
-    ''')
+        """
+    )
 
     conn.commit()
     return conn, cursor
 
-# EXECUTAR BANCO
+# executa banco
 conn, cursor = init_db()
 
     # Criar tabelas
