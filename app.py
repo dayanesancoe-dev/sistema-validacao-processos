@@ -270,7 +270,7 @@ def atualizar_status(pid, novo_status):
         conn.commit()
         return True, "✅ Status atualizado!"
     except Exception as e:
-        return False, f"❌ Erro ao atualizar status: {str(e)}" 
+        return False, f"❌ Erro ao atualizar status: {str(e)}") 
 
 # ==================== FUNÇÕES CRUD (TRAMITAÇÃO) ====================
 
