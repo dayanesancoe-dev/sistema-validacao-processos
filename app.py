@@ -135,7 +135,7 @@ def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_proto
     except sqlite3.IntegrityError:
         return False, "❌ Erro: Já existe um processo com este número!"
     except Exception as e:
-        return False, f"❌ Erro ao cadastrar processo: {str(e)}"
+        return False, f"❌ Erro ao cadastrar: {str(e)}"
 
 def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
     """Atualiza um processo existente no banco de dados."""
@@ -308,9 +308,10 @@ with st.sidebar:
         reset_database()
 
     st.subheader("🔑 Chave de API Google Gemini")
-    api_key = st.text_input("Insira sua API Key:", type="password", value=st.session_state['api_key'])
-    if api_key:
-        st.session_state['api_key'] = api_key
+    # Usa st.session_state['api_key'] como valor padrão
+    api_key_input = st.text_input("Insira sua API Key:", type="password", value=st.session_state['api_key'])
+    if api_key_input:
+        st.session_state['api_key'] = api_key_input
         st.success("API Key configurada!")
     else:
         st.warning("Por favor, insira sua API Key do Google Gemini para usar a análise de IA.")
@@ -396,6 +397,7 @@ with tab2:
 
                 with col_del:
                     if st.button("🗑️ Deletar Processo", key=f"delete_{p[0]}", type="secondary", use_container_width=True):
+                        # Confirmação de deleção
                         if st.warning(f"Tem certeza que deseja deletar o processo {p[1]}? Esta ação é irreversível e também apagará todas as tramitações e análises associadas."):
                             if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_{p[0]}", type="danger"):
                                 sucesso, msg = deletar(p[0])
@@ -474,6 +476,14 @@ with tab3:
 
                 if st.form_submit_button("Registrar Movimentação", type="primary"):
                     if data_entrada_nova:
+                        # Primeiro, fechar a tramitação anterior se houver uma aberta
+                        c = conn.cursor()
+                        c.execute('''UPDATE tramitacao 
+                                    SET data_saida = ? 
+                                    WHERE processo_id = ? AND data_saida IS NULL''', 
+                                 (data_entrada_nova.strftime('%Y-%m-%d'), pid_tramitacao))
+                        conn.commit()
+
                         sucesso, msg = registrar_tramitacao(
                             pid_tramitacao, 
                             setor_novo, 
@@ -527,12 +537,13 @@ with tab3:
                 for t in tramitacoes:
                     # t: (id, processo_id, setor, data_entrada, data_saida, observacao)
                     icon = "➡️"
-                    if t[2] == "Arquivo": icon = "🗄️"
-                    elif t[2] == "Emissão de Alvará": icon = "📜"
-                    elif t[2] == "Fiscalização": icon = "🔍"
-                    elif t[2] == "Analista": icon = "👨‍💻"
+                    if t[2] == "Protocolo": icon = "📝"
                     elif t[2] == "Requerente": icon = "👤"
-                    elif t[2] == "Protocolo": icon = "📝"
+                    elif t[2] == "Analista": icon = "👨‍💻"
+                    elif t[2] == "Fiscalização": icon = "🔍"
+                    elif t[2] == "Parecer Externo": icon = "🏢"
+                    elif t[2] == "Emissão de Alvará": icon = "📜"
+                    elif t[2] == "Arquivo": icon = "🗄️"
 
                     data_saida_display = datetime.strptime(t[4], '%Y-%m-%d').strftime('%d/%m/%Y') if t[4] else "Em andamento"
 
@@ -548,6 +559,7 @@ with tab3:
                                 st.session_state[f"edit_tram_mode_{t[0]}"] = not st.session_state.get(f"edit_tram_mode_{t[0]}", False)
                         with col_tdel:
                             if st.button("🗑️ Deletar Movimentação", key=f"delete_tram_{t[0]}", type="secondary", use_container_width=True):
+                                # Confirmação de deleção
                                 if st.warning(f"Tem certeza que deseja deletar esta movimentação ({t[2]})?"):
                                     if st.button("CONFIRMAR DELEÇÃO", key=f"confirm_delete_tram_{t[0]}", type="danger"):
                                         sucesso, msg = deletar_tramitacao(t[0])
@@ -639,6 +651,11 @@ with tab4:
 # ==================== ABA 5: ANALISAR ====================
 with tab5:
     st.header("🤖 Análise de Projetos com IA")
+
+    if not st.session_state['api_key']: # Verifica a API Key da sidebar
+        st.warning("⚠️ Configure sua API Key do Google Gemini na barra lateral para usar esta função.")
+        st.info("**Como obter:** Acesse https://aistudio.google.com/app/apikey e crie uma chave gratuita.")
+        st.stop()
 
     processos_analise = listar()
     if not processos_analise:
@@ -853,7 +870,7 @@ with tab6:
             "Processos por Analista",
             "Distribuição de Status Kanban",
             "Área Total por Uso",
-            "Processos por Data de Protocolo" # Novo gráfico
+            "Processos por Data de Protocolo"
         ])
 
         st.divider()
