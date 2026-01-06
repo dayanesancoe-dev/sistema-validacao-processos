@@ -4,9 +4,7 @@ import PyPDF2
 from datetime import datetime, timedelta
 import sqlite3
 import os
-import smtplib # Para enviar e-mails
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+# Removidos smtplib, MIMEText, MIMEMultipart pois o envio de e-mail foi desativado
 
 # ==================== Importação de bibliotecas opcionais (para gráficos) ====================
 try:
@@ -26,8 +24,7 @@ if 'db_reset_needed_rerun' not in st.session_state:
     st.session_state['db_reset_needed_rerun'] = False
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
-if 'show_register_form' not in st.session_state:
-    st.session_state['show_register_form'] = False
+# Removido 'show_register_form' pois não haverá formulário de registro
 
 if st.session_state['db_reset_needed_rerun']:
     st.session_state['db_reset_needed_rerun'] = False
@@ -314,66 +311,7 @@ def get_tramitacoes_df():
         st.error(f"❌ Erro ao carregar tramitações para DataFrame: {e}")
         return pd.DataFrame()
 
-# ==================== FUNÇÃO DE ENVIO DE E-MAIL ====================
-def send_email_request(username_req, password_req, contact_email):
-    # Verifica se as configurações SMTP estão presentes em st.secrets
-    if "smtp" not in st.secrets or \
-       "sender_email" not in st.secrets["smtp"] or \
-       "sender_password" not in st.secrets["smtp"] or \
-       "smtp_server" not in st.secrets["smtp"] or \
-       "smtp_port" not in st.secrets["smtp"] or \
-       "recipient_email" not in st.secrets["smtp"]:
-        st.error("❌ As configurações SMTP não estão completas em '.streamlit/secrets.toml'. Não é possível enviar e-mail.")
-        return False
-
-    sender_email = st.secrets["smtp"]["sender_email"]
-    sender_password = st.secrets["smtp"]["sender_password"]
-    smtp_server = st.secrets["smtp"]["smtp_server"]
-    smtp_port = st.secrets["smtp"]["smtp_port"]
-    recipient_email = st.secrets["smtp"]["recipient_email"] # Lendo de secrets.toml
-
-    msg = MIMEMultipart()
-    msg['From'] = sender_email
-    msg['To'] = recipient_email
-    msg['Subject'] = "Solicitação de Criação de Usuário no Sistema de Validação"
-
-    body = f"""
-    <html>
-    <body>
-        <p>Uma nova solicitação de acesso foi feita para o Sistema de Validação de Processos:</p>
-        <ul>
-            <li><b>Usuário Desejado:</b> {username_req}</li>
-            <li><b>Senha Desejada:</b> {password_req}</li>
-            <li><b>E-mail para Contato:</b> {contact_email}</li>
-        </ul>
-        <p>Por favor, revise a solicitação e, se aprovada, adicione as credenciais ao arquivo <code>.streamlit/secrets.toml</code> na seção <code>[login]</code>.</p>
-        <p>Exemplo:</p>
-        <pre>
-[login]
-username = "admin"
-password = "admin123"
-{username_req}_username = "{username_req}"
-{username_req}_password = "{password_req}"
-        </pre>
-        <p>Atenciosamente,</p>
-        <p>Sistema de Validação de Processos</p>
-    </body>
-    </html>
-    """
-    msg.attach(MIMEText(body, 'html'))
-
-    try:
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.login(sender_email, sender_password)
-            server.send_message(msg)
-        return True
-    except Exception as e:
-        st.error(f"❌ Erro ao enviar e-mail: {e}")
-        st.info("Verifique se as credenciais SMTP em '.streamlit/secrets.toml' estão corretas (especialmente a senha de aplicativo do Gmail, se for o caso).")
-        return False
-
-# ==================== TELAS DE LOGIN E REGISTRO ====================
+# ==================== TELAS DE LOGIN ====================
 
 def login_form():
     """Exibe o formulário de login."""
@@ -388,67 +326,30 @@ def login_form():
         if login_button:
             login_config = st.secrets.get("login", {})
 
-            if not ("username" in login_config and "password" in login_config):
-                st.error("❌ Credenciais de login não configuradas em '.streamlit/secrets.toml'.")
-                st.info("Por favor, crie o arquivo '.streamlit/secrets.toml' com as credenciais de login.")
+            if not login_config: # Verifica se a seção [login] está vazia ou não existe
+                st.error("❌ Nenhuma credencial de login configurada em '.streamlit/secrets.toml'.")
+                st.info("Por favor, adicione usuários e senhas no arquivo '.streamlit/secrets.toml' na seção [login].")
                 return
 
-            if username == login_config["username"] and password == login_config["password"]:
-                st.session_state['logged_in'] = True
-                st.session_state['username'] = username
-                st.success("Login realizado com sucesso!")
-                st.experimental_rerun()
-                return
-
-            authenticated_other_user = False
+            authenticated_user = False
+            # Tenta autenticar com todos os usuários configurados
             for key in login_config:
                 if key.endswith("_username") and login_config[key] == username:
                     password_key = key.replace("_username", "_password")
                     if password_key in login_config and login_config[password_key] == password:
                         st.session_state['logged_in'] = True
                         st.session_state['username'] = username
-                        authenticated_other_user = True
+                        authenticated_user = True
                         st.success(f"Login realizado com sucesso! Bem-vindo(a), {username}!")
                         st.experimental_rerun()
                         break
 
-            if not authenticated_other_user:
+            if not authenticated_user:
                 st.error("Usuário ou senha incorretos.")
 
     st.markdown("---")
-    # Botão "Solicitar Novo Usuário" movido para FORA do formulário
-    if st.button("Solicitar Novo Usuário", key="show_register_button", use_container_width=True):
-        st.session_state['show_register_form'] = True
-        st.experimental_rerun()
+    st.info("Para adicionar novos usuários, edite o arquivo '.streamlit/secrets.toml' diretamente.")
 
-def register_request_form():
-    """Exibe o formulário para solicitar acesso."""
-    st.title("📝 Solicitar Novo Usuário")
-    st.markdown("---")
-
-    with st.form("register_request_form"):
-        username_req = st.text_input("Nome de Usuário Desejado", help="Será usado para login.")
-        password_req = st.text_input("Senha Desejada", type="password", help="Será a senha para login.")
-        contact_email = st.text_input("Seu E-mail (para contato)", help="Usaremos para te avisar sobre a aprovação.")
-
-        submit_request = st.form_submit_button("Enviar Solicitação", type="primary")
-
-        if submit_request:
-            if not (username_req and password_req and contact_email):
-                st.error("❌ Por favor, preencha todos os campos.")
-            else:
-                if send_email_request(username_req, password_req, contact_email):
-                    st.success("✅ Sua solicitação de acesso foi enviada para Dayane. Você será notificado por e-mail quando for aprovada.")
-                    st.session_state['show_register_form'] = False
-                    st.experimental_rerun()
-                else:
-                    st.error("❌ Falha ao enviar a solicitação. Verifique as configurações SMTP e tente novamente.")
-
-    st.markdown("---")
-    # Botão "Voltar para Login" movido para FORA do formulário
-    if st.button("Voltar para Login", key="back_to_login_button", use_container_width=True):
-        st.session_state['show_register_form'] = False
-        st.experimental_rerun()
 
 # ==================== CONTEÚDO PRINCIPAL DO APP (APÓS LOGIN) ====================
 def main_app_content():
@@ -873,7 +774,7 @@ def main_app_content():
                         proj = st.file_uploader("PDFs do Projeto", type=['pdf'], accept_multiple_files=True, key="proj_upload")
                     with col_leg:
                         st.subheader("📜 Legislação Municipal")
-                        leg = st.file_uploader("PDFs da Legislação", type=['pdf'], accept_multiple_files=True, key="leg_upload")
+                        leg = st.file_uploader("PDFs do Projeto", type=['pdf'], accept_multiple_files=True, key="leg_upload") # Corrigido para PDF da Legislação
 
                     st.divider()
                     regras = st.text_area("📏 Regras Específicas a Verificar (Artigos da Lei, etc.):", height=150, 
@@ -1104,9 +1005,7 @@ Sistema de Validação de Processos - Prefeitura de Contagem
                         st.info("Nenhum processo com data de protocolo válida para este gráfico.")
 
 # ==================== LÓGICA PRINCIPAL DO APP ====================
-if st.session_state['show_register_form']:
-    register_request_form()
-elif not st.session_state['logged_in']:
+if not st.session_state['logged_in']:
     login_form()
 else:
     main_app_content()
