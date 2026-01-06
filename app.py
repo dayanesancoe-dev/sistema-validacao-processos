@@ -388,17 +388,32 @@ def login_form():
         if login_button:
             login_config = st.secrets.get("login", {})
 
-            if "username" in login_config and "password" in login_config:
-                if username == login_config["username"] and password == login_config["password"]:
-                    st.session_state['logged_in'] = True
-                    st.session_state['username'] = username
-                    st.success("Login realizado com sucesso!")
-                    st.experimental_rerun()
-                else:
-                    st.error("Usuário ou senha incorretos.")
-            else:
+            if not ("username" in login_config and "password" in login_config):
                 st.error("❌ Credenciais de login não configuradas em '.streamlit/secrets.toml'.")
                 st.info("Por favor, crie o arquivo '.streamlit/secrets.toml' com as credenciais de login.")
+                return
+
+            if username == login_config["username"] and password == login_config["password"]:
+                st.session_state['logged_in'] = True
+                st.session_state['username'] = username
+                st.success("Login realizado com sucesso!")
+                st.experimental_rerun()
+                return
+
+            authenticated_other_user = False
+            for key in login_config:
+                if key.endswith("_username") and login_config[key] == username:
+                    password_key = key.replace("_username", "_password")
+                    if password_key in login_config and login_config[password_key] == password:
+                        st.session_state['logged_in'] = True
+                        st.session_state['username'] = username
+                        authenticated_other_user = True
+                        st.success(f"Login realizado com sucesso! Bem-vindo(a), {username}!")
+                        st.experimental_rerun()
+                        break
+
+            if not authenticated_other_user:
+                st.error("Usuário ou senha incorretos.")
 
     st.markdown("---")
     # Botão "Solicitar Novo Usuário" movido para FORA do formulário
