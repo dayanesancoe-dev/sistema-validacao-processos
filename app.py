@@ -409,5 +409,219 @@ with tab3:
                         # Verificar se está editando
                         if st.session_state.get(f'edit_{tram_id}', False):
                             # Modo edição
-                            st.markdown(f"###
+                            st.markdown(f"### ✏️ Editando Movimentação #{tram_id}")
 
+                            col1, col2 = st.columns(2)
+
+                            with col1:
+                                edit_setor = st.selectbox("Setor:", [
+                                    "Requerente", "Analista", "Fiscalização",
+                                    "Parecer Externo", "Emissão de Alvará",
+                                    "Protocolo", "Arquivo"
+                                ], index=["Requerente", "Analista", "Fiscalização",
+                                         "Parecer Externo", "Emissão de Alvará",
+                                         "Protocolo", "Arquivo"].index(t[2]), 
+                                key=f"edit_setor_{tram_id}")
+
+                                edit_entrada = st.date_input("Data Entrada:", 
+                                    value=datetime.strptime(t[3], '%Y-%m-%d'),
+                                    key=f"edit_entrada_{tram_id}")
+
+                            with col2:
+                                edit_saida = st.date_input("Data Saída:", 
+                                    value=datetime.strptime(t[4], '%Y-%m-%d') if t[4] else None,
+                                    key=f"edit_saida_{tram_id}")
+
+                                edit_obs = st.text_input("Observação:", 
+                                    value=t[5] if t[5] else "",
+                                    key=f"edit_obs_{tram_id}")
+
+                            col_save, col_cancel = st.columns(2)
+
+                            with col_save:
+                                if st.button("💾 Salvar", key=f"save_{tram_id}", type="primary"):
+                                    saida_str = edit_saida.strftime('%Y-%m-%d') if edit_saida else None
+                                    if atualizar_tramitacao(tram_id, edit_setor, 
+                                                          edit_entrada.strftime('%Y-%m-%d'),
+                                                          saida_str, edit_obs):
+                                        st.success("✅ Atualizado!")
+                                        st.session_state[f'edit_{tram_id}'] = False
+                                        st.rerun()
+
+                            with col_cancel:
+                                if st.button("❌ Cancelar", key=f"cancel_{tram_id}"):
+                                    st.session_state[f'edit_{tram_id}'] = False
+                                    st.rerun()
+
+                        else:
+                            # Modo visualização
+                            col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
+
+                            col1.write(f"**{t[2]}**")
+                            col2.write(f"📥 {datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')}")
+
+                            if t[4]:
+                                col3.write(f"📤 {datetime.strptime(t[4], '%Y-%m-%d').strftime('%d/%m/%Y')}")
+                            else:
+                                col3.write("🔄 Em andamento")
+
+                            tempo = calcular_tempo(t[3], t[4])
+                            col4.metric("Dias", tempo)
+
+                            # Botões editar e deletar
+                            if col5.button("✏️", key=f"btn_edit_{tram_id}"):
+                                st.session_state[f'edit_{tram_id}'] = True
+                                st.rerun()
+
+                            if col5.button("🗑️", key=f"btn_del_{tram_id}"):
+                                if deletar_tramitacao(tram_id):
+                                    st.success("✅ Deletado!")
+                                    st.rerun()
+
+                            if t[5]:
+                                st.caption(f"💬 {t[5]}")
+
+                        st.divider()
+
+                    # Estatísticas
+                    st.subheader("📈 Tempo por Setor")
+                    stats = estatisticas_tramitacao(processo[0])
+
+                    if stats:
+                        cols = st.columns(len(stats))
+                        for idx, (setor, dias) in enumerate(stats.items()):
+                            cols[idx].metric(setor, f"{dias} dias")
+
+                        st.divider()
+                        st.metric("⏱️ Tempo Total", f"{sum(stats.values())} dias")
+                else:
+                    st.info("📭 Nenhuma movimentação")
+
+# ==================== ABA 4: ANALISAR ====================
+with tab4:
+    st.header("🤖 Analisar com IA")
+
+    if not api_key:
+        st.warning("⚠️ Configure API")
+        st.stop()
+
+    procs = listar()
+
+    if not procs:
+        st.info("📭 Cadastre um processo")
+        st.stop()
+
+    proc_sel = st.selectbox("Processo:", [f"{p[1]} - {p[3]}" for p in procs], key="anal_sel")
+
+    if proc_sel:
+        num_proc = proc_sel.split(" - ")[0]
+        dados = buscar_por_numero(num_proc)
+
+        if dados:
+            with st.expander("📋 Dados", expanded=True):
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Número", dados[1])
+                col2.metric("Uso", dados[5])
+                col3.metric("Área", f"{dados[7]}m²")
+
+            st.divider()
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.subheader("📐 Projeto")
+                proj = st.file_uploader("PDFs", type=['pdf'], accept_multiple_files=True, key="proj")
+
+            with col2:
+                st.subheader("📜 Legislação")
+                leg = st.file_uploader("PDFs", type=['pdf'], accept_multiple_files=True, key="leg")
+
+            st.divider()
+            regras = st.text_area("📏 Regras:", height=150)
+
+            st.divider()
+
+            if st.button("🔍 ANALISAR", type="primary"):
+                if not proj or not leg or not regras:
+                    st.error("❌ Anexe PDFs e regras!")
+                else:
+                    with st.spinner("🤖 Analisando..."):
+                        try:
+                            genai.configure(api_key=api_key)
+
+                            txt_proj = ""
+                            for pdf in proj:
+                                reader = PyPDF2.PdfReader(pdf)
+                                for page in reader.pages:
+                                    txt_proj += page.extract_text() + "\n"
+
+                            txt_leg = ""
+                            for pdf in leg:
+                                reader = PyPDF2.PdfReader(pdf)
+                                for page in reader.pages:
+                                    txt_leg += page.extract_text() + "\n"
+
+                            model = None
+                            for nome in ['gemini-1.5-flash', 'gemini-pro']:
+                                try:
+                                    model = genai.GenerativeModel(nome)
+                                    st.info(f"✅ {nome}")
+                                    break
+                                except:
+                                    continue
+
+                            if not model:
+                                st.error("❌ Modelo indisponível")
+                                st.stop()
+
+                            prompt = f"""Analista Prefeitura de Contagem.
+
+PROCESSO: {dados[1]}
+USO: {dados[5]}
+TIPOLOGIA: {dados[6]}
+ÁREA: {dados[7]}m²
+
+LEGISLAÇÃO:
+{txt_leg[:4000]}
+
+REGRAS:
+{regras}
+
+PROJETO:
+{txt_proj[:6000]}
+
+## ✅ CONFORMIDADES
+## ❌ NÃO CONFORMIDADES
+## ⚠️ ATENÇÃO
+## 🔧 RECOMENDAÇÕES
+## 📊 PARECER
+"""
+
+                            resp = model.generate_content(prompt)
+
+                            texto = resp.text.upper()
+                            if "APROVADO" in texto and "REPROVADO" not in texto:
+                                status = "APROVADO"
+                                st.success("✅ APROVADO")
+                            elif "REPROVADO" in texto:
+                                status = "REPROVADO"
+                                st.error("❌ REPROVADO")
+                            else:
+                                status = "INCONCLUSIVO"
+
+                            st.divider()
+                            st.markdown(resp.text)
+
+                            salvar_analise(dados[0], resp.text, status)
+
+                            rel = f"""PREFEITURA DE CONTAGEM
+{resp.text}
+"""
+
+                            st.download_button("📥 BAIXAR", rel, f"relatorio_{dados[1].replace('.', '_')}.txt", type="primary")
+
+                        except Exception as e:
+                            st.error(f"❌ {str(e)}")
+
+st.divider()
+st.markdown("🏛️ **Sistema de Validação** • Prefeitura de Contagem")
