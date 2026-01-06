@@ -11,11 +11,9 @@ st.set_page_config(page_title="Sistema de Validação - Prefeitura Contagem", pa
 
 @st.cache_resource
 def init_db():
-    """Inicializa o banco de dados"""
     conn = sqlite3.connect('processos.db', check_same_thread=False)
     cursor = conn.cursor()
 
-    # Criar tabela de processos
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS processos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,32 +28,6 @@ def init_db():
         )
     ''')
 
-    # Criar tabela de PDFs do projeto
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS pdfs_projeto (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            processo_id INTEGER NOT NULL,
-            nome_arquivo TEXT NOT NULL,
-            conteudo BLOB NOT NULL,
-            tipo TEXT,
-            data_upload TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (processo_id) REFERENCES processos(id)
-        )
-    ''')
-
-    # Criar tabela de PDFs da legislação
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS pdfs_legislacao (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            processo_id INTEGER NOT NULL,
-            nome_arquivo TEXT NOT NULL,
-            conteudo BLOB NOT NULL,
-            data_upload TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (processo_id) REFERENCES processos(id)
-        )
-    ''')
-
-    # Criar tabela de análises
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS analises (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,7 +47,6 @@ conn, cursor = init_db()
 # ==================== FUNÇÕES DO BANCO ====================
 
 def cadastrar_processo(numero, rt, requerente, analista, uso, tipologia, area):
-    """Cadastra novo processo"""
     try:
         cursor.execute('''
             INSERT INTO processos (numero_processo, responsavel_tecnico, requerente, analista, uso, tipologia, area_construida)
@@ -89,22 +60,18 @@ def cadastrar_processo(numero, rt, requerente, analista, uso, tipologia, area):
         return False, f"❌ Erro: {str(e)}"
 
 def listar_processos():
-    """Lista todos os processos"""
     cursor.execute('SELECT * FROM processos ORDER BY data_cadastro DESC')
     return cursor.fetchall()
 
 def buscar_processo(numero):
-    """Busca processo pelo número"""
     cursor.execute('SELECT * FROM processos WHERE numero_processo = ?', (numero,))
     return cursor.fetchone()
 
 def buscar_processo_por_id(processo_id):
-    """Busca processo pelo ID"""
     cursor.execute('SELECT * FROM processos WHERE id = ?', (processo_id,))
     return cursor.fetchone()
 
 def atualizar_processo(processo_id, numero, rt, requerente, analista, uso, tipologia, area):
-    """Atualiza dados do processo"""
     try:
         cursor.execute('''
             UPDATE processos 
@@ -117,10 +84,7 @@ def atualizar_processo(processo_id, numero, rt, requerente, analista, uso, tipol
         return False, f"❌ Erro: {str(e)}"
 
 def deletar_processo(processo_id):
-    """Deleta processo"""
     try:
-        cursor.execute('DELETE FROM pdfs_projeto WHERE processo_id = ?', (processo_id,))
-        cursor.execute('DELETE FROM pdfs_legislacao WHERE processo_id = ?', (processo_id,))
         cursor.execute('DELETE FROM analises WHERE processo_id = ?', (processo_id,))
         cursor.execute('DELETE FROM processos WHERE id = ?', (processo_id,))
         conn.commit()
@@ -129,7 +93,6 @@ def deletar_processo(processo_id):
         return False, f"❌ Erro: {str(e)}"
 
 def salvar_analise(processo_id, resultado, status):
-    """Salva resultado da análise"""
     try:
         cursor.execute('INSERT INTO analises (processo_id, resultado, status) VALUES (?, ?, ?)',
                       (processo_id, resultado, status))
@@ -139,7 +102,6 @@ def salvar_analise(processo_id, resultado, status):
         return False
 
 def buscar_analises(processo_id):
-    """Busca análises de um processo"""
     cursor.execute('SELECT * FROM analises WHERE processo_id = ? ORDER BY data_analise DESC', (processo_id,))
     return cursor.fetchall()
 
@@ -148,17 +110,13 @@ def buscar_analises(processo_id):
 st.title("🏛️ Sistema de Validação de Processos")
 st.markdown("**Prefeitura de Contagem** — Setor de Liberação de Alvarás")
 
-# Sidebar - Configuração API
+# Sidebar
 with st.sidebar:
     st.header("⚙️ Configurações")
-    api_key = st.text_input("API Key do Google Gemini:", type="password", help="Obtenha em: https://aistudio.google.com/app/apikey")
+    api_key = st.text_input("API Key do Google Gemini:", type="password")
 
     if api_key:
         st.success("✅ API configurada!")
-        try:
-            genai.configure(api_key=api_key)
-        except:
-            st.error("❌ Erro na API Key")
     else:
         st.warning("⚠️ Configure a API Key")
         st.markdown("[🔗 Obter API Key](https://aistudio.google.com/app/apikey)")
@@ -166,10 +124,10 @@ with st.sidebar:
     st.divider()
     st.metric("Total de Processos", len(listar_processos()))
 
-# Abas principais
+# Abas
 tab1, tab2, tab3 = st.tabs(["📝 Cadastrar Processo", "📋 Gerenciar Processos", "🤖 Análise com IA"])
 
-# ==================== ABA 1: CADASTRAR PROCESSO ====================
+# ==================== ABA 1: CADASTRAR ====================
 with tab1:
     st.header("📝 Cadastrar Novo Processo")
 
@@ -187,8 +145,6 @@ with tab1:
             tipologia = st.selectbox("Tipologia *", ["", "Casa", "Sobrado", "Edifício", "Galpão", "Loja", "Sala Comercial", "Outro"])
             area = st.number_input("Área Construída (m²) *", min_value=0.0, step=0.01, format="%.2f")
 
-        st.markdown("*Campos obrigatórios")
-
         submitted = st.form_submit_button("✅ Cadastrar Processo", use_container_width=True, type="primary")
 
         if submitted:
@@ -202,181 +158,173 @@ with tab1:
                 else:
                     st.error(mensagem)
 
-# ==================== ABA 2: GERENCIAR PROCESSOS ====================
+# ==================== ABA 2: GERENCIAR ====================
 with tab2:
     st.header("📋 Gerenciar Processos")
 
     processos = listar_processos()
 
     if not processos:
-        st.info("📭 Nenhum processo cadastrado ainda. Cadastre na aba anterior.")
+        st.info("📭 Nenhum processo cadastrado")
     else:
         # Filtros
-        col_filtro1, col_filtro2, col_filtro3 = st.columns(3)
-
-        with col_filtro1:
-            filtro_numero = st.text_input("🔍 Buscar por número:", key="filtro_num")
-        with col_filtro2:
-            filtro_analista = st.text_input("🔍 Buscar por analista:", key="filtro_ana")
-        with col_filtro3:
-            filtro_uso = st.selectbox("🔍 Filtrar por uso:", ["Todos", "Residencial", "Comercial", "Industrial", "Misto", "Institucional", "Outro"], key="filtro_uso")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            filtro_num = st.text_input("🔍 Número:", key="filtro_n")
+        with col2:
+            filtro_ana = st.text_input("🔍 Analista:", key="filtro_a")
+        with col3:
+            filtro_uso = st.selectbox("🔍 Uso:", ["Todos", "Residencial", "Comercial", "Industrial", "Misto", "Institucional", "Outro"], key="filtro_u")
 
         # Aplicar filtros
         processos_filtrados = processos
-        if filtro_numero:
-            processos_filtrados = [p for p in processos_filtrados if filtro_numero.lower() in p[1].lower()]
-        if filtro_analista:
-            processos_filtrados = [p for p in processos_filtrados if filtro_analista.lower() in p[4].lower()]
+        if filtro_num:
+            processos_filtrados = [p for p in processos_filtrados if filtro_num.lower() in p[1].lower()]
+        if filtro_ana:
+            processos_filtrados = [p for p in processos_filtrados if filtro_ana.lower() in p[4].lower()]
         if filtro_uso != "Todos":
             processos_filtrados = [p for p in processos_filtrados if p[5] == filtro_uso]
 
-        st.divider()
-        st.write(f"**Exibindo {len(processos_filtrados)} de {len(processos)} processos**")
+        st.write(f"**{len(processos_filtrados)} de {len(processos)} processos**")
 
-        # Mostrar processos
         for processo in processos_filtrados:
-            processo_id, numero, rt, requerente, analista, uso, tipologia, area, data = processo
+            # CORREÇÃO: desempacotar corretamente (8 colunas)
+            pid, num, rt, req, ana, uso, tip, area, data = processo
 
-            with st.expander(f"📄 {numero} - {requerente}", expanded=False):
+            with st.expander(f"📄 {num} - {req}"):
                 col_info, col_acoes = st.columns([3, 1])
 
                 with col_info:
                     st.write(f"**RT:** {rt}")
-                    st.write(f"**Requerente:** {requerente}")
-                    st.write(f"**Analista:** {analista}")
-                    st.write(f"**Uso:** {uso} | **Tipologia:** {tipologia}")
+                    st.write(f"**Requerente:** {req}")
+                    st.write(f"**Analista:** {ana}")
+                    st.write(f"**Uso:** {uso} | **Tipologia:** {tip}")
                     st.write(f"**Área:** {area}m²")
-                    st.write(f"**Cadastrado em:** {data}")
+                    st.write(f"**Cadastrado:** {data}")
 
-                    # Mostrar análises
-                    analises = buscar_analises(processo_id)
+                    analises = buscar_analises(pid)
                     if analises:
                         st.divider()
-                        st.write("**📊 Análises realizadas:**")
+                        st.write("**📊 Análises:**")
                         for analise in analises:
                             status_icon = "✅" if analise[3] == "APROVADO" else "❌"
                             st.write(f"{status_icon} {analise[4]} - {analise[3]}")
 
                 with col_acoes:
-                    if st.button("✏️ Editar", key=f"edit_{processo_id}"):
-                        st.session_state[f'editando_{processo_id}'] = True
+                    if st.button("✏️", key=f"edit_{pid}"):
+                        st.session_state[f'editando_{pid}'] = True
                         st.rerun()
 
-                    if st.button("🗑️ Deletar", key=f"del_{processo_id}"):
-                        sucesso, msg = deletar_processo(processo_id)
+                    if st.button("🗑️", key=f"del_{pid}"):
+                        sucesso, msg = deletar_processo(pid)
                         if sucesso:
                             st.success(msg)
                             st.rerun()
                         else:
                             st.error(msg)
 
-                # Formulário de edição
-                if st.session_state.get(f'editando_{processo_id}', False):
+                # Edição
+                if st.session_state.get(f'editando_{pid}', False):
                     st.divider()
-                    st.subheader("✏️ Editar Processo")
 
-                    with st.form(f"form_edit_{processo_id}"):
+                    with st.form(f"form_edit_{pid}"):
                         col1, col2 = st.columns(2)
 
                         with col1:
-                            novo_numero = st.text_input("Número", value=numero, key=f"num_{processo_id}")
-                            novo_rt = st.text_input("RT", value=rt, key=f"rt_{processo_id}")
-                            novo_req = st.text_input("Requerente", value=requerente, key=f"req_{processo_id}")
-                            novo_ana = st.text_input("Analista", value=analista, key=f"ana_{processo_id}")
+                            novo_num = st.text_input("Número", value=num, key=f"n_{pid}")
+                            novo_rt = st.text_input("RT", value=rt, key=f"rt_{pid}")
+                            novo_req = st.text_input("Requerente", value=req, key=f"req_{pid}")
+                            novo_ana = st.text_input("Analista", value=ana, key=f"ana_{pid}")
 
                         with col2:
                             novo_uso = st.selectbox("Uso", ["Residencial", "Comercial", "Industrial", "Misto", "Institucional", "Outro"], 
                                                    index=["Residencial", "Comercial", "Industrial", "Misto", "Institucional", "Outro"].index(uso),
-                                                   key=f"uso_{processo_id}")
+                                                   key=f"uso_{pid}")
                             nova_tip = st.selectbox("Tipologia", ["Casa", "Sobrado", "Edifício", "Galpão", "Loja", "Sala Comercial", "Outro"],
-                                                   index=["Casa", "Sobrado", "Edifício", "Galpão", "Loja", "Sala Comercial", "Outro"].index(tipologia),
-                                                   key=f"tip_{processo_id}")
-                            nova_area = st.number_input("Área (m²)", value=float(area), step=0.01, key=f"area_{processo_id}")
+                                                   index=["Casa", "Sobrado", "Edifício", "Galpão", "Loja", "Sala Comercial", "Outro"].index(tip),
+                                                   key=f"tip_{pid}")
+                            nova_area = st.number_input("Área", value=float(area), step=0.01, key=f"area_{pid}")
 
                         col_btn1, col_btn2 = st.columns(2)
 
                         with col_btn1:
-                            if st.form_submit_button("💾 Salvar", use_container_width=True, type="primary"):
-                                sucesso, msg = atualizar_processo(processo_id, novo_numero, novo_rt, novo_req, novo_ana, novo_uso, nova_tip, nova_area)
+                            if st.form_submit_button("💾 Salvar", use_container_width=True):
+                                sucesso, msg = atualizar_processo(pid, novo_num, novo_rt, novo_req, novo_ana, novo_uso, nova_tip, nova_area)
                                 if sucesso:
                                     st.success(msg)
-                                    del st.session_state[f'editando_{processo_id}']
+                                    del st.session_state[f'editando_{pid}']
                                     st.rerun()
                                 else:
                                     st.error(msg)
 
                         with col_btn2:
                             if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                                del st.session_state[f'editando_{processo_id}']
+                                del st.session_state[f'editando_{pid}']
                                 st.rerun()
 
-# ==================== ABA 3: ANÁLISE COM IA ====================
+# ==================== ABA 3: ANÁLISE ====================
 with tab3:
     st.header("🤖 Análise com Inteligência Artificial")
 
     if not api_key:
-        st.warning("⚠️ Configure sua API Key na barra lateral para usar esta função")
+        st.warning("⚠️ Configure sua API Key na barra lateral")
         st.stop()
 
     processos = listar_processos()
 
     if not processos:
-        st.info("📭 Cadastre um processo primeiro na aba 'Cadastrar Processo'")
+        st.info("📭 Cadastre um processo primeiro")
         st.stop()
 
     # Selecionar processo
-    opcoes_processos = [f"{p[1]} - {p[3]}" for p in processos]
-    processo_selecionado = st.selectbox("Selecione o Processo:", opcoes_processos, key="sel_proc_analise")
+    opcoes = [f"{p[1]} - {p[3]}" for p in processos]
+    proc_sel = st.selectbox("Selecione o Processo:", opcoes, key="sel_proc")
 
-    if processo_selecionado:
-        numero_proc = processo_selecionado.split(" - ")[0]
-        processo_dados = buscar_processo(numero_proc)
+    if proc_sel:
+        num_proc = proc_sel.split(" - ")[0]
+        proc_dados = buscar_processo(num_proc)
 
-        if processo_dados:
-            # Mostrar dados do processo
+        if proc_dados:
+            # Mostrar dados
             with st.expander("📋 Dados do Processo", expanded=True):
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Número", processo_dados[1])
-                col2.metric("Uso", processo_dados[5])
-                col3.metric("Área", f"{processo_dados[7]}m²")
+                col1.metric("Número", proc_dados[1])
+                col2.metric("Uso", proc_dados[5])
+                col3.metric("Área", f"{proc_dados[7]}m²")
 
-                st.write(f"**RT:** {processo_dados[2]}")
-                st.write(f"**Requerente:** {processo_dados[3]}")
-                st.write(f"**Analista:** {processo_dados[4]}")
-                st.write(f"**Tipologia:** {processo_dados[6]}")
+                st.write(f"**RT:** {proc_dados[2]}")
+                st.write(f"**Requerente:** {proc_dados[3]}")
 
             st.divider()
 
-            # Upload de arquivos
-            col_up1, col_up2 = st.columns(2)
+            # Upload
+            col1, col2 = st.columns(2)
 
-            with col_up1:
+            with col1:
                 st.subheader("📐 PDFs do Projeto")
-                projetos = st.file_uploader("Anexe os PDFs", type=['pdf'], accept_multiple_files=True, key="pdfs_proj_analise")
+                projetos = st.file_uploader("Anexe PDFs", type=['pdf'], accept_multiple_files=True, key="pdfs_proj")
                 if projetos:
                     st.success(f"✅ {len(projetos)} arquivo(s)")
 
-            with col_up2:
+            with col2:
                 st.subheader("📜 PDFs da Legislação")
-                legislacoes = st.file_uploader("Anexe os PDFs", type=['pdf'], accept_multiple_files=True, key="pdfs_leg_analise")
+                legislacoes = st.file_uploader("Anexe PDFs", type=['pdf'], accept_multiple_files=True, key="pdfs_leg")
                 if legislacoes:
                     st.success(f"✅ {len(legislacoes)} arquivo(s)")
 
             st.divider()
-            st.subheader("📏 Regras a Verificar")
-            regras = st.text_area("Digite as regras (uma por linha):", height=150, 
-                                 placeholder="Ex:\nArt. 10 - Área mínima 50m²\nArt. 15 - Recuo frontal 5m",
-                                 key="regras_analise")
+            regras = st.text_area("📏 Regras a Verificar:", height=150, placeholder="Ex:\nArt. 10 - Área mínima 50m²")
 
             st.divider()
 
-            # Botão de análise
-            if st.button("🔍 ANALISAR PROJETO", type="primary", use_container_width=True):
+            if st.button("🔍 ANALISAR", type="primary", use_container_width=True):
                 if not projetos or not legislacoes or not regras:
                     st.error("❌ Anexe os PDFs e digite as regras!")
                 else:
-                    with st.spinner("🤖 Analisando com IA..."):
+                    with st.spinner("🤖 Analisando..."):
                         try:
+                            genai.configure(api_key=api_key)
+
                             # Extrair textos
                             texto_proj = ""
                             for pdf in projetos:
@@ -390,30 +338,28 @@ with tab3:
                                 for page in reader.pages:
                                     texto_leg += page.extract_text() + "\n"
 
-                            # Criar modelo
-                            modelos = ['models/gemini-pro', 'gemini-pro', 'models/gemini-1.5-pro-latest']
+                            # Tentar modelos
                             model = None
-
-                            for nome_modelo in modelos:
+                            for nome in ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro']:
                                 try:
-                                    model = genai.GenerativeModel(nome_modelo)
+                                    model = genai.GenerativeModel(nome)
+                                    st.info(f"✅ Modelo: {nome}")
                                     break
                                 except:
                                     continue
 
                             if not model:
-                                st.error("❌ Nenhum modelo disponível")
+                                st.error("❌ Nenhum modelo disponível. Verifique sua API Key.")
                                 st.stop()
 
                             # Prompt
                             prompt = f"""Analista da Prefeitura de Contagem.
 
-PROCESSO: {processo_dados[1]}
-REQUERENTE: {processo_dados[3]}
-RT: {processo_dados[2]}
-USO: {processo_dados[5]}
-TIPOLOGIA: {processo_dados[6]}
-ÁREA: {processo_dados[7]}m²
+PROCESSO: {proc_dados[1]}
+RT: {proc_dados[2]}
+REQUERENTE: {proc_dados[3]}
+USO: {proc_dados[5]}
+ÁREA: {proc_dados[7]}m²
 
 LEGISLAÇÃO:
 {texto_leg[:4000]}
@@ -427,66 +373,59 @@ PROJETO:
 Analise:
 
 ## ✅ CONFORMIDADES
-( artigos)
+(cite artigos)
 
-## ❌ NÃO CONFORMIDADES
-(cite artigos e localize)
+## ❌ NÃO CONFORMIDADES  
+(cite artigos)
 
 ## ⚠️ PONTOS DE ATENÇÃO
 
 ## 🔧 RECOMENDAÇÕES
 
 ## 📊 PARECER
-APROVADO ou REPROVADO (justifique)
+APROVADO ou REPROVADO
 """
 
                             response = model.generate_content(prompt)
 
-                            # Determinar status
-                            texto_resp = response.text.upper()
-                            if "APROVADO" in texto_resp and "REPROVADO" not in texto_resp:
+                            # Status
+                            texto = response.text.upper()
+                            if "APROVADO" in texto and "REPROVADO" not in texto:
                                 status = "APROVADO"
-                                st.success("✅ PROJETO APROVADO")
-                            elif "REPROVADO" in texto_resp:
+                                st.success("✅ APROVADO")
+                            elif "REPROVADO" in texto:
                                 status = "REPROVADO"
-                                st.error("❌ PROJETO REPROVADO")
+                                st.error("❌ REPROVADO")
                             else:
                                 status = "INCONCLUSIVO"
-                                st.warning("⚠️ ANÁLISE INCONCLUSIVA")
 
                             st.divider()
                             st.markdown(response.text)
 
-                            # Salvar análise
-                            salvar_analise(processo_dados[0], response.text, status)
+                            # Salvar
+                            salvar_analise(proc_dados[0], response.text, status)
 
                             # Download
                             relatorio = f"""PREFEITURA DE CONTAGEM
-RELATÓRIO DE ANÁLISE
+RELATÓRIO
 
-Processo: {processo_dados[1]}
-Requerente: {processo_dados[3]}
-RT: {processo_dados[2]}
-Analista: {processo_dados[4]}
-Uso: {processo_dados[5]}
-Tipologia: {processo_dados[6]}
-Área: {processo_dados[7]}m²
+Processo: {proc_dados[1]}
+RT: {proc_dados[2]}
+Requerente: {proc_dados[3]}
 Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}
 
 {response.text}
 """
 
                             st.download_button(
-                                "📥 BAIXAR RELATÓRIO",
+                                "📥 BAIXAR",
                                 relatorio,
-                                f"relatorio_{processo_dados[1].replace('.', '_')}.txt",
-                                type="primary",
-                                use_container_width=True
+                                f"relatorio_{proc_dados[1].replace('.', '_')}.txt",
+                                type="primary"
                             )
 
                         except Exception as e:
                             st.error(f"❌ Erro: {str(e)}")
 
 st.divider()
-st.markdown("---")
-st.markdown("🏛️ **Sistema de Validação** • Prefeitura de Contagem • Powered by Google Gemini")
+st.markdown("🏛️ **Sistema de Validação** • Prefeitura de Contagem")
