@@ -3,4 +3,3 @@ google-generativeai
 PyPDF2
 plotly
 pandas
-bcrypt
