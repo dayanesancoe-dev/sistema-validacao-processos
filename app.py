@@ -15,7 +15,7 @@ st.markdown("**Prefeitura de Contagem** — Liberação de Alvarás de Construç
 # Inicializar banco de dados
 @st.cache_resource
 def init_db():
-    conn = sqlite3.connect(':memory:')
+    conn = sqlite3.connect('processos.db', check_same_thread=False)
     cursor = conn.cursor()
     # Criar tabelas
     cursor.execute('''
