@@ -62,7 +62,6 @@ def init_db():
 
     conn.commit()
     return conn, cursor
-
     cursor = conn.cursor()
 
     # Criar tabelas
