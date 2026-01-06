@@ -316,13 +316,13 @@ def get_tramitacoes_df():
 
 # ==================== FUNÇÃO DE ENVIO DE E-MAIL ====================
 def send_email_request(username_req, password_req, contact_email):
-    recipient_email = "dayanesancoe@gmail.com" # Seu e-mail para receber as solicitações
-
+    # Verifica se as configurações SMTP estão presentes em st.secrets
     if "smtp" not in st.secrets or \
        "sender_email" not in st.secrets["smtp"] or \
        "sender_password" not in st.secrets["smtp"] or \
        "smtp_server" not in st.secrets["smtp"] or \
-       "smtp_port" not in st.secrets["smtp"]:
+       "smtp_port" not in st.secrets["smtp"] or \
+       "recipient_email" not in st.secrets["smtp"]:
         st.error("❌ As configurações SMTP não estão completas em '.streamlit/secrets.toml'. Não é possível enviar e-mail.")
         return False
 
@@ -330,6 +330,7 @@ def send_email_request(username_req, password_req, contact_email):
     sender_password = st.secrets["smtp"]["sender_password"]
     smtp_server = st.secrets["smtp"]["smtp_server"]
     smtp_port = st.secrets["smtp"]["smtp_port"]
+    recipient_email = st.secrets["smtp"]["recipient_email"] # Lendo de secrets.toml
 
     msg = MIMEMultipart()
     msg['From'] = sender_email
@@ -519,7 +520,7 @@ def main_app_content():
 
     # ==================== ABA 2: GERENCIAR ====================
     with tab2:
-        st.header("📋 Gerenciamento de Processos")
+        st.header("📋 Gerenciar Processos")
 
         processos = listar()
 
