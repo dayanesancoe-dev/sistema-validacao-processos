@@ -1,732 +1,355 @@
 import streamlit as st
-import sqlite3
-import pandas as pd
-from datetime import datetime
 import io
-import re
+from datetime import datetime
 
-# Tentar importar bibliotecas
-try:
-    import PyPDF2
-    PDF_DISPONIVEL = True
-except ImportError:
-    PDF_DISPONIVEL = False
-    st.warning("⚠️ PyPDF2 não instalado. Instale com: pip install PyPDF2")
-
-try:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-    from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER
-    REPORTLAB_DISPONIVEL = True
-except ImportError:
-    REPORTLAB_DISPONIVEL = False
-    st.warning("⚠️ ReportLab não instalado. Instale com: pip install reportlab")
-
-try:
-    import google.generativeai as genai
-    GEMINI_DISPONIVEL = True
-except ImportError:
-    GEMINI_DISPONIVEL = False
-    st.warning("⚠️ Google Generative AI não instalado. Instale com: pip install google-generativeai")
-
-# Configuração da página
 st.set_page_config(
-    page_title="Sistema de Validação de Processos",
+    page_title="Sistema de Validação - Prefeitura Contagem",
     page_icon="🏛️",
     layout="wide"
 )
 
-st.title("🏛️ Sistema de Validação de Processos com IA")
-st.markdown("**Prefeitura de Contagem** — Análise Inteligente com Google Gemini Pro")
+st.title("🏛️ Sistema de Validação de Processos Arquitetônicos")
+st.markdown("**Prefeitura de Contagem** — Análise Inteligente com Google Gemini AI")
 
-# ==================== CONFIGURAÇÃO GEMINI ====================
+# Configuração da API Key
+st.sidebar.header("⚙️ Configurações")
+st.sidebar.markdown("Configure sua **API Key do Google Gemini** para usar análise com IA:")
 
-# Inicializar session_state para API key
-if 'gemini_api_key' not in st.session_state:
-    st.session_state.gemini_api_key = ""
+api_key = st.sidebar.text_input(
+    "API Key:",
+    type="password",
+    help="Obtenha em: https://aistudio.google.com/app/apikey"
+)
 
-# Sidebar para configuração da API
-with st.sidebar:
-    st.header("⚙️ Configurações")
-    st.write("**Google Gemini Pro**")
+if api_key:
+    st.sidebar.success("✅ API configurada!")
+else:
+    st.sidebar.warning("⚠️ Sem API Key")
+    st.sidebar.markdown("[🔗 Obter API Key](https://aistudio.google.com/app/apikey)")
 
-    api_key_input = st.text_input(
-        "API Key do Gemini",
-        type="password",
-        value=st.session_state.gemini_api_key,
-        help="Cole sua API Key do Google AI Studio",
-        key="api_key_sidebar"
-    )
+st.sidebar.divider()
+st.sidebar.markdown("**Status:**")
 
-    if api_key_input != st.session_state.gemini_api_key:
-        st.session_state.gemini_api_key = api_key_input
-        if api_key_input and GEMINI_DISPONIVEL:
-            try:
-                genai.configure(api_key=api_key_input)
-                st.success("✅ API configurada!")
-            except Exception as e:
-                st.error(f"❌ Erro na API: {str(e)}")
+# Verificar bibliotecas
+try:
+    import google.generativeai as genai
+    st.sidebar.write("✅ Gemini AI")
+    GEMINI_OK = True
+except:
+    st.sidebar.write("❌ Gemini AI")
+    GEMINI_OK = False
 
-    if not st.session_state.gemini_api_key:
-        st.info("📌 Para análise inteligente, configure sua API Key do Gemini")
-        st.markdown("[🔗 Obter API Key](https://makersuite.google.com/app/apikey)")
+try:
+    import PyPDF2
+    st.sidebar.write("✅ PyPDF2")
+    PDF_OK = True
+except:
+    st.sidebar.write("❌ PyPDF2")
+    PDF_OK = False
+
+# Interface principal
+st.divider()
+
+# Abas
+tab1, tab2 = st.tabs(["📋 Nova Análise", "❓ Ajuda"])
+
+with tab1:
+    if not api_key:
+        st.warning("⚠️ Configure sua API Key na barra lateral para começar")
+        st.info("**Como obter:** Acesse https://aistudio.google.com/app/apikey, faça login e crie uma chave")
+        st.stop()
+
+    if not GEMINI_OK or not PDF_OK:
+        st.error("❌ Bibliotecas necessárias não instaladas")
+        st.stop()
+
+    # Configurar Gemini
+    try:
+        genai.configure(api_key=api_key)
+    except Exception as e:
+        st.error(f"❌ Erro na API Key: {str(e)}")
+        st.stop()
+
+    # Formulário
+    st.header("📄 Upload dos Documentos")
+
+    col_upload1, col_upload2 = st.columns(2)
+
+    with col_upload1:
+        st.subheader("📐 Projeto Arquitetônico")
+        projetos_upload = st.file_uploader(
+            "Anexe os PDFs do projeto (plantas, cortes, fachadas):",
+            type=['pdf'],
+            accept_multiple_files=True,
+            key="upload_projetos"
+        )
+        if projetos_upload:
+            st.success(f"✅ {len(projetos_upload)} arquivo(s) anexado(s)")
+
+    with col_upload2:
+        st.subheader("📜 Legislação Municipal")
+        legislacoes_upload = st.file_uploader(
+            "Anexe os PDFs da legislação aplicável:",
+            type=['pdf'],
+            accept_multiple_files=True,
+            key="upload_legislacoes"
+        )
+        if legislacoes_upload:
+            st.success(f"✅ {len(legislacoes_upload)} arquivo(s) anexado(s)")
 
     st.divider()
-    st.write("**Status do Sistema:**")
-    st.write(f"{'✅' if PDF_DISPONIVEL else '❌'} PyPDF2")
-    st.write(f"{'✅' if REPORTLAB_DISPONIVEL else '❌'} ReportLab")
-    st.write(f"{'✅' if GEMINI_DISPONIVEL else '❌'} Gemini AI")
-    st.write(f"{'✅' if st.session_state.gemini_api_key else '❌'} API Key")
+    st.header("📋 Dados do Processo")
 
-# Inicializar banco de dados
-@st.cache_resource
-def init_db():
-    conn = sqlite3.connect('processos.db', check_same_thread=False)
-    cursor = conn.cursor()
+    col_dados1, col_dados2, col_dados3 = st.columns(3)
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS processos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            numero_processo TEXT UNIQUE NOT NULL,
-            requerente TEXT NOT NULL,
-            rt TEXT NOT NULL,
-            analista TEXT NOT NULL,
-            uso TEXT NOT NULL,
-            area_total REAL NOT NULL,
-            estatus TEXT DEFAULT 'Em análise',
-            data_protocolo TEXT DEFAULT CURRENT_TIMESTAMP,
-            data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+    with col_dados1:
+        numero_processo = st.text_input("Número do Processo:", placeholder="Ex: 2024.001.123")
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS legislacoes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT UNIQUE NOT NULL,
-            descricao TEXT,
-            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+    with col_dados2:
+        nome_requerente = st.text_input("Nome do Requerente:", placeholder="Nome completo")
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS regras_legislacao (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            legislacao_id INTEGER NOT NULL,
-            artigo TEXT NOT NULL,
-            descricao TEXT NOT NULL,
-            campo_validacao TEXT NOT NULL,
-            operador TEXT NOT NULL,
-            valor_referencia REAL NOT NULL,
-            mensagem_erro TEXT,
-            FOREIGN KEY (legislacao_id) REFERENCES legislacoes(id)
-        )
-    ''')
+    with col_dados3:
+        area_total = st.number_input("Área Total (m²):", min_value=0.0, step=0.1, format="%.2f")
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS pdfs_legislacao (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            legislacao_id INTEGER NOT NULL,
-            pdf_nome TEXT NOT NULL,
-            pdf_conteudo BLOB NOT NULL,
-            data_upload TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (legislacao_id) REFERENCES legislacoes(id)
-        )
-    ''')
+    st.divider()
+    st.subheader("📏 Regras a Verificar")
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS pdfs_projeto (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            processo_id INTEGER NOT NULL,
-            pdf_nome TEXT NOT NULL,
-            pdf_conteudo BLOB NOT NULL,
-            tipo_documento TEXT,
-            data_upload TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (processo_id) REFERENCES processos(id)
-        )
-    ''')
+    regras_texto = st.text_area(
+        "Digite as regras da legislação que devem ser verificadas (uma por linha):",
+        placeholder="Exemplo:\nArt. 10 - Área mínima de lote: 50m²\nArt. 15 - Recuo frontal mínimo: 5m\nArt. 20 - Taxa de ocupação máxima: 60%\nArt. 25 - Altura máxima: 3 pavimentos",
+        height=200,
+        help="Liste os artigos da lei que devem ser verificados no projeto"
+    )
 
-    conn.commit()
-    return conn, cursor
+    st.divider()
 
-conn, cursor = init_db()
+    # Botão de análise
+    btn_analisar = st.button(
+        "🔍 ANALISAR PROJETO COM IA",
+        type="primary",
+        use_container_width=True
+    )
 
-# ==================== FUNÇÕES DE ANÁLISE COM IA ====================
+    if btn_analisar:
+        # Validações
+        if not projetos_upload:
+            st.error("❌ Anexe ao menos 1 PDF do projeto!")
+        elif not legislacoes_upload:
+            st.error("❌ Anexe ao menos 1 PDF da legislação!")
+        elif not numero_processo:
+            st.error("❌ Informe o número do processo!")
+        elif not nome_requerente:
+            st.error("❌ Informe o nome do requerente!")
+        elif not area_total or area_total <= 0:
+            st.error("❌ Informe a área total!")
+        elif not regras_texto:
+            st.error("❌ Digite as regras a verificar!")
+        else:
+            with st.spinner("🤖 Analisando projeto com Inteligência Artificial... Aguarde..."):
+                try:
+                    # Extrair texto dos PDFs do projeto
+                    texto_completo_projeto = ""
+                    for idx, pdf_file in enumerate(projetos_upload, 1):
+                        pdf_reader = PyPDF2.PdfReader(pdf_file)
+                        for num_page, page in enumerate(pdf_reader.pages, 1):
+                            texto_completo_projeto += f"\n[PROJETO - Arquivo {idx} - Página {num_page}]\n"
+                            texto_completo_projeto += page.extract_text() + "\n"
 
-def extrair_texto_pdf(pdf_bytes):
-    """Extrai texto de um PDF"""
-    if not PDF_DISPONIVEL:
-        return "[PyPDF2 não instalado]"
+                    # Extrair texto dos PDFs da legislação
+                    texto_completo_legislacao = ""
+                    for idx, pdf_file in enumerate(legislacoes_upload, 1):
+                        pdf_reader = PyPDF2.PdfReader(pdf_file)
+                        for num_page, page in enumerate(pdf_reader.pages, 1):
+                            texto_completo_legislacao += f"\n[LEGISLAÇÃO - Arquivo {idx} - Página {num_page}]\n"
+                            texto_completo_legislacao += page.extract_text() + "\n"
 
-    try:
-        pdf_file = io.BytesIO(pdf_bytes)
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
-        texto = ""
-        for page in pdf_reader.pages:
-            texto += page.extract_text() + "\n"
-        return texto
-    except Exception as e:
-        return f"[Erro ao extrair: {str(e)}]"
+                    # Criar modelo Gemini
+                    model = genai.GenerativeModel('gemini-pro')
 
-def analisar_com_gemini(texto_projeto, texto_legislacao, regras):
-    """Usa o Gemini Pro para análise detalhada"""
-    if not GEMINI_DISPONIVEL or not st.session_state.gemini_api_key:
-        return None
+                    # Prompt detalhado
+                    prompt_analise = f"""Você é um ANALISTA TÉCNICO ESPECIALIZADO em projetos arquitetônicos da Prefeitura de Contagem - MG.
 
-    try:
-        genai.configure(api_key=st.session_state.gemini_api_key)
-        model = genai.GenerativeModel('gemini-pro')
+**DADOS DO PROCESSO:**
+- Número do Processo: {numero_processo}
+- Requerente: {nome_requerente}
+- Área Total: {area_total}m²
+- Data da Análise: {datetime.now().strftime('%d/%m/%Y às %H:%M')}
 
-        # Montar o prompt detalhado
-        regras_texto = "\n".join([f"- {r[1]}: {r[2]}" for r in regras])
+**LEGISLAÇÃO MUNICIPAL APLICÁVEL:**
+{texto_completo_legislacao[:4500]}
 
-        prompt = f"""Você é um analista técnico de projetos arquitetônicos da Prefeitura de Contagem.
-
-LEGISLAÇÃO APLICÁVEL:
-{texto_legislacao[:3000]}
-
-REGRAS ESPECÍFICAS A VERIFICAR:
+**REGRAS ESPECÍFICAS A VERIFICAR:**
 {regras_texto}
 
-PROJETO ARQUITETÔNICO SUBMETIDO:
-{texto_projeto[:5000]}
+**PROJETO ARQUITETÔNICO SUBMETIDO:**
+{texto_completo_projeto[:6500]}
 
-INSTRUÇÕES:
-Analise o projeto comparando com a legislação e as regras específicas. Para cada regra, identifique:
+**INSTRUÇÕES PARA ANÁLISE:**
 
-1. CONFORMIDADES: O que está de acordo
-2. NÃO CONFORMIDADES: O que viola a legislação (cite o artigo específico)
-3. PONTOS DE ATENÇÃO: O que precisa ser verificado com mais detalhe
-4. RECOMENDAÇÕES: Sugestões de correção
+Analise detalhadamente o projeto arquitetônico e verifique sua conformidade com a legislação municipal de Contagem.
 
-Seja OBJETIVO, TÉCNICO e SEMPRE CITE OS ARTIGOS DA LEI.
+**IMPORTANTE:**
+- Cite SEMPRE o artigo específico da legislação
+- Seja técnico, objetivo e preciso
+- Identifique problemas com localização no projeto quando possível
+- Use linguagem formal de parecer técnico
 
-Formato da resposta:
-## CONFORMIDADES
-- [lista]
+**FORMATO DA RESPOSTA:**
 
-## NÃO CONFORMIDADES
-- [Artigo X] Descrição do problema
-- [lista]
+## ✅ CONFORMIDADES
+Liste cada item que está em conformidade, citando:
+- Artigo da lei
+- Descrição do que está conforme
+- Referência ao local do projeto onde foi verificado
 
-## PONTOS DE ATENÇÃO
-- [lista]
+## ❌ NÃO CONFORMIDADES - PONTOS A CORRIGIR
+Para cada violação identificada, indique:
+- **Artigo violado:** (número e texto da lei)
+- **Problema encontrado:** (descrição detalhada)
+- **Localização:** (onde no projeto está o problema)
+- **Correção necessária:** (o que precisa ser alterado)
 
-## RECOMENDAÇÕES
-- [lista]
+## ⚠️ PONTOS DE ATENÇÃO
+Itens que necessitam:
+- Verificação presencial
+- Documentação complementar
+- Esclarecimentos do responsável técnico
 
-## CONCLUSÃO
-[Aprovado/Reprovado com justificativa]
+## 🔧 RECOMENDAÇÕES TÉCNICAS
+Sugestões detalhadas para correção de cada não conformidade encontrada.
+
+## 📊 PARECER TÉCNICO FINAL
+Emita parecer conclusivo:
+- **APROVADO** (se não houver nenhuma não conformidade)
+- **REPROVADO** (se houver não conformidades)
+
+Justifique tecnicamente sua conclusão citando os artigos relevantes.
+
+---
+**Análise técnica realizada em: {datetime.now().strftime('%d/%m/%Y às %H:%M')}**
+**Sistema de Validação com IA - Prefeitura de Contagem**
 """
 
-        response = model.generate_content(prompt)
-        return response.text
-
-    except Exception as e:
-        st.error(f"❌ Erro na análise com IA: {str(e)}")
-        return None
-
-def gerar_relatorio_pdf_com_ia(resultado, analise_ia):
-    """Gera relatório PDF com análise da IA"""
-    if not REPORTLAB_DISPONIVEL:
-        return None
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
-    story = []
-    styles = getSampleStyleSheet()
-
-    titulo_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=18,
-        textColor=colors.HexColor('#1f4788'),
-        spaceAfter=30,
-        alignment=TA_CENTER
-    )
-
-    subtitulo_style = ParagraphStyle(
-        'CustomSubtitle',
-        parent=styles['Heading2'],
-        fontSize=14,
-        textColor=colors.HexColor('#2d5aa6'),
-        spaceAfter=12
-    )
-
-    # Cabeçalho
-    story.append(Paragraph("RELATÓRIO DE ANÁLISE TÉCNICA COM IA", titulo_style))
-    story.append(Paragraph("Prefeitura de Contagem - Análise Assistida por Inteligência Artificial", styles['Normal']))
-    story.append(Spacer(1, 0.5*cm))
-
-    # Dados do processo
-    story.append(Paragraph("DADOS DO PROCESSO", subtitulo_style))
-
-    dados = [
-        ['Número:', resultado['numero_processo']],
-        ['Requerente:', resultado['requerente']],
-        ['Data:', datetime.now().strftime('%d/%m/%Y %H:%M')],
-        ['Status:', 'APROVADO' if resultado['total_violacoes'] == 0 else 'REPROVADO']
-    ]
-
-    tabela = Table(dados, colWidths=[5*cm, 10*cm])
-    tabela.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f0fe')),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-    ]))
-    story.append(tabela)
-    story.append(Spacer(1, 1*cm))
-
-    # Resumo
-    story.append(Paragraph("RESUMO DA VALIDAÇÃO", subtitulo_style))
-
-    resumo = [
-        ['Regras Analisadas', str(resultado['total_regras'])],
-        ['Conformidades', str(resultado['total_conformidades'])],
-        ['Violações', str(resultado['total_violacoes'])]
-    ]
-
-    tab_resumo = Table(resumo, colWidths=[8*cm, 7*cm])
-    cor = colors.HexColor('#34a853') if resultado['total_violacoes'] == 0 else colors.HexColor('#ea4335')
-    tab_resumo.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), cor),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 12),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('GRID', (0, 0), (-1, -1), 1, colors.white),
-    ]))
-    story.append(tab_resumo)
-    story.append(Spacer(1, 1*cm))
-
-    # Análise da IA
-    if analise_ia:
-        story.append(PageBreak())
-        story.append(Paragraph("ANÁLISE TÉCNICA DETALHADA (IA)", subtitulo_style))
-        story.append(Spacer(1, 0.3*cm))
-
-        # Dividir análise em parágrafos
-        paragrafos = analise_ia.split('\n')
-        for para in paragrafos:
-            if para.strip():
-                story.append(Paragraph(para, styles['Normal']))
-                story.append(Spacer(1, 0.2*cm))
-
-    # Violações encontradas
-    if resultado['violacoes']:
-        story.append(PageBreak())
-        story.append(Paragraph("PONTOS A CORRIGIR", subtitulo_style))
-
-        for i, v in enumerate(resultado['violacoes'], 1):
-            texto = f"<b>{i}. {v['artigo']}</b><br/>{v['descricao']}<br/><b>Problema:</b> {v['mensagem']}<br/><b>Esperado:</b> {v['valor_esperado']} | <b>Encontrado:</b> {v['valor_encontrado']}"
-            story.append(Paragraph(texto, styles['Normal']))
-            story.append(Spacer(1, 0.5*cm))
-
-    # Rodapé
-    story.append(Spacer(1, 2*cm))
-    story.append(Paragraph("_" * 80, styles['Normal']))
-    story.append(Paragraph(f"Relatório gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}<br/>Análise assistida por Google Gemini Pro", styles['Normal']))
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
-# ==================== FUNÇÕES DO BANCO ====================
-
-def cadastrar_processo(numero, requerente, rt, analista, uso, area):
-    try:
-        cursor.execute('INSERT INTO processos (numero_processo, requerente, rt, analista, uso, area_total) VALUES (?, ?, ?, ?, ?, ?)', 
-                      (numero, requerente, rt, analista, uso, area))
-        conn.commit()
-        st.success(f"✅ Processo {numero} cadastrado!")
-        return True
-    except sqlite3.IntegrityError:
-        st.error(f"❌ Processo {numero} já existe!")
-        return False
-
-def deletar_processo(processo_id):
-    try:
-        cursor.execute('DELETE FROM pdfs_projeto WHERE processo_id = ?', (processo_id,))
-        cursor.execute('DELETE FROM processos WHERE id = ?', (processo_id,))
-        conn.commit()
-        st.success("✅ Processo deletado!")
-        return True
-    except:
-        return False
-
-def listar_processos():
-    cursor.execute('SELECT id, numero_processo, requerente, rt, uso, area_total, estatus FROM processos')
-    return cursor.fetchall()
-
-def cadastrar_legislacao(nome, descricao):
-    try:
-        cursor.execute('INSERT INTO legislacoes (nome, descricao) VALUES (?, ?)', (nome, descricao))
-        conn.commit()
-        st.success(f"✅ Legislação '{nome}' cadastrada!")
-        return cursor.lastrowid
-    except sqlite3.IntegrityError:
-        st.error(f"❌ Legislação '{nome}' já existe!")
-        return None
-
-def deletar_legislacao(legislacao_id):
-    try:
-        cursor.execute('DELETE FROM regras_legislacao WHERE legislacao_id = ?', (legislacao_id,))
-        cursor.execute('DELETE FROM pdfs_legislacao WHERE legislacao_id = ?', (legislacao_id,))
-        cursor.execute('DELETE FROM legislacoes WHERE id = ?', (legislacao_id,))
-        conn.commit()
-        st.success("✅ Legislação deletada!")
-        return True
-    except:
-        return False
-
-def listar_legislacoes():
-    cursor.execute('SELECT id, nome, descricao FROM legislacoes')
-    return cursor.fetchall()
-
-def anexar_pdf_projeto(processo_id, pdf_file, tipo_doc):
-    try:
-        cursor.execute('INSERT INTO pdfs_projeto (processo_id, pdf_nome, pdf_conteudo, tipo_documento) VALUES (?, ?, ?, ?)', 
-                      (processo_id, pdf_file.name, pdf_file.read(), tipo_doc))
-        conn.commit()
-        return True
-    except:
-        return False
-
-def listar_pdfs_projeto(processo_id):
-    cursor.execute('SELECT id, pdf_nome, tipo_documento FROM pdfs_projeto WHERE processo_id = ?', (processo_id,))
-    return cursor.fetchall()
-
-def obter_pdf_projeto_por_id(pdf_id):
-    cursor.execute('SELECT pdf_nome, pdf_conteudo FROM pdfs_projeto WHERE id = ?', (pdf_id,))
-    resultado = cursor.fetchone()
-    return resultado if resultado else (None, None)
-
-def obter_todos_pdfs_projeto(processo_id):
-    cursor.execute('SELECT pdf_conteudo FROM pdfs_projeto WHERE processo_id = ?', (processo_id,))
-    return cursor.fetchall()
-
-def deletar_pdf_projeto(pdf_id):
-    try:
-        cursor.execute('DELETE FROM pdfs_projeto WHERE id = ?', (pdf_id,))
-        conn.commit()
-        return True
-    except:
-        return False
-
-def obter_todos_pdfs_legislacao(legislacao_id):
-    cursor.execute('SELECT pdf_conteudo FROM pdfs_legislacao WHERE legislacao_id = ?', (legislacao_id,))
-    return cursor.fetchall()
-
-def adicionar_regra(leg_id, artigo, descricao, campo, operador, valor, mensagem):
-    try:
-        cursor.execute('INSERT INTO regras_legislacao (legislacao_id, artigo, descricao, campo_validacao, operador, valor_referencia, mensagem_erro) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-                      (leg_id, artigo, descricao, campo, operador, valor, mensagem))
-        conn.commit()
-        st.success(f"✅ Regra adicionada!")
-        return True
-    except:
-        return False
-
-def listar_regras_legislacao(legislacao_id):
-    cursor.execute('SELECT id, artigo, descricao, campo_validacao, operador, valor_referencia, mensagem_erro FROM regras_legislacao WHERE legislacao_id = ?', (legislacao_id,))
-    return cursor.fetchall()
-
-def deletar_regra(regra_id):
-    try:
-        cursor.execute('DELETE FROM regras_legislacao WHERE id = ?', (regra_id,))
-        conn.commit()
-        return True
-    except:
-        return False
-
-def validar_processo(processo_id, legislacao_id, usar_ia=True):
-    """Valida processo com análise de IA opcional"""
-    cursor.execute('SELECT * FROM processos WHERE id = ?', (processo_id,))
-    processo = cursor.fetchone()
-
-    if not processo:
-        return None
-
-    cursor.execute('SELECT id, artigo, descricao, campo_validacao, operador, valor_referencia, mensagem_erro FROM regras_legislacao WHERE legislacao_id = ?', (legislacao_id,))
-    regras = cursor.fetchall()
-
-    conformidades = []
-    violacoes = []
-
-    campos_processo = {
-        'numero_processo': processo[1],
-        'requerente': processo[2],
-        'rt': processo[3],
-        'analista': processo[4],
-        'uso': processo[5],
-        'area_total': processo[6],
-        'estatus': processo[7]
-    }
-
-    # Validação básica por regras
-    for regra in regras:
-        campo = regra[3]
-        operador = regra[4]
-        valor_ref = regra[5]
-
-        if campo not in campos_processo:
-            continue
-
-        valor_campo = campos_processo[campo]
-        resultado = False
-
-        try:
-            if operador == '>=':
-                resultado = float(valor_campo) >= float(valor_ref)
-            elif operador == '<=':
-                resultado = float(valor_campo) <= float(valor_ref)
-            elif operador == '>':
-                resultado = float(valor_campo) > float(valor_ref)
-            elif operador == '<':
-                resultado = float(valor_campo) < float(valor_ref)
-            elif operador == '==':
-                resultado = str(valor_campo) == str(valor_ref)
-            elif operador == '!=':
-                resultado = str(valor_campo) != str(valor_ref)
-        except:
-            pass
-
-        if resultado:
-            conformidades.append({'artigo': regra[1], 'descricao': regra[2]})
-        else:
-            violacoes.append({
-                'artigo': regra[1],
-                'descricao': regra[2],
-                'campo': campo,
-                'valor_esperado': f"{operador} {valor_ref}",
-                'valor_encontrado': valor_campo,
-                'mensagem': regra[6]
-            })
-
-    # Extrair textos dos PDFs
-    texto_projeto = ""
-    pdfs_proj = obter_todos_pdfs_projeto(processo_id)
-    for pdf in pdfs_proj:
-        if pdf and pdf[0]:
-            texto_projeto += extrair_texto_pdf(pdf[0]) + "\n\n"
-
-    texto_legislacao = ""
-    pdfs_leg = obter_todos_pdfs_legislacao(legislacao_id)
-    for pdf in pdfs_leg:
-        if pdf and pdf[0]:
-            texto_legislacao += extrair_texto_pdf(pdf[0]) + "\n\n"
-
-    # Análise com IA (se habilitada)
-    analise_ia = None
-    if usar_ia and texto_projeto and texto_legislacao:
-        analise_ia = analisar_com_gemini(texto_projeto, texto_legislacao, regras)
-
-    return {
-        'numero_processo': processo[1],
-        'requerente': processo[2],
-        'total_regras': len(regras),
-        'total_conformidades': len(conformidades),
-        'total_violacoes': len(violacoes),
-        'conformidades': conformidades,
-        'violacoes': violacoes,
-        'analise_ia': analise_ia
-    }
-
-# ==================== INTERFACE ====================
-
-tab1, tab2, tab3 = st.tabs(["📝 Processos", "📚 Legislações", "🤖 Validar com IA"])
-
-# ABA 1: PROCESSOS
-with tab1:
-    st.header("Gerenciar Processos")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("➕ Cadastrar")
-        numero = st.text_input("Número", key="proc_num")
-        requerente = st.text_input("Requerente", key="proc_req")
-        rt = st.text_input("RT", key="proc_rt")
-        analista = st.text_input("Analista", key="proc_ana")
-        uso = st.selectbox("Uso", ["Residencial", "Comercial", "Industrial", "Misto"], key="proc_uso")
-        area = st.number_input("Área (m²)", min_value=0.0, step=0.1, key="proc_area")
-
-        if st.button("Cadastrar", key="proc_cad_btn"):
-            if numero and requerente and rt and analista and area > 0:
-                cadastrar_processo(numero, requerente, rt, analista, uso, area)
-                st.rerun()
-
-    with col2:
-        st.subheader("📋 Lista")
-        processos = listar_processos()
-        if processos:
-            for p in processos:
-                with st.expander(f"{p[1]} - {p[2]}"):
-                    st.write(f"RT: {p[3]} | Uso: {p[4]} | {p[5]}m²")
-                    if st.button("🗑️", key=f"proc_del_{p[0]}"):
-                        deletar_processo(p[0])
-                        st.rerun()
-
-# ABA 2: LEGISLAÇÕES
-with tab2:
-    st.header("Gerenciar Legislações")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("➕ Cadastrar")
-        nome = st.text_input("Nome", key="leg_nome")
-        desc = st.text_area("Descrição", key="leg_desc")
-
-        if st.button("Cadastrar", key="leg_cad_btn"):
-            if nome and desc:
-                cadastrar_legislacao(nome, desc)
-                st.rerun()
-
-    with col2:
-        st.subheader("📚 Lista")
-        legs = listar_legislacoes()
-        if legs:
-            for l in legs:
-                with st.expander(l[1]):
-                    st.write(l[2])
-                    if st.button("🗑️", key=f"leg_del_{l[0]}"):
-                        deletar_legislacao(l[0])
-                        st.rerun()
-
-    st.divider()
-    st.subheader("➕ Adicionar Regras")
-
-    if legs:
-        leg_sel = st.selectbox("Legislação", [f"ID {l[0]} - {l[1]}" for l in legs], key="regra_leg_sel")
-        leg_id = int(leg_sel.split()[1])
-
-        regras = listar_regras_legislacao(leg_id)
-        if regras:
-            for r in regras:
-                col_r, col_d = st.columns([5, 1])
-                col_r.write(f"📌 {r[1]}: {r[2]}")
-                if col_d.button("🗑️", key=f"regra_del_{r[0]}"):
-                    deletar_regra(r[0])
-                    st.rerun()
-
-        st.divider()
-        col1, col2 = st.columns(2)
-
-        with col1:
-            art = st.text_input("Artigo", key="regra_art")
-            desc_r = st.text_area("Descrição", key="regra_desc")
-            campo = st.selectbox("Campo", ["area_total", "uso", "estatus"], key="regra_campo")
-
-        with col2:
-            op = st.selectbox("Operador", [">=", "<=", ">", "<", "==", "!="], key="regra_op")
-            val = st.number_input("Valor", step=0.1, key="regra_val")
-            msg = st.text_input("Mensagem", key="regra_msg")
-
-        if st.button("Adicionar", key="regra_add_btn"):
-            if art and desc_r and msg:
-                adicionar_regra(leg_id, art, desc_r, campo, op, val, msg)
-                st.rerun()
-
-# ABA 3: VALIDAR COM IA
-with tab3:
-    st.header("🤖 Validação Inteligente com Gemini Pro")
-
-    processos = listar_processos()
-    legs = listar_legislacoes()
-
-    if not st.session_state.gemini_api_key:
-        st.warning("⚠️ Configure sua API Key do Gemini na barra lateral para usar análise com IA")
-
-    if processos and legs:
-        col1, col2 = st.columns(2)
-
-        with col1:
-            proc_sel = st.selectbox("Processo", [f"ID {p[0]} - {p[1]}" for p in processos], key="val_proc_sel")
-            proc_id = int(proc_sel.split()[1])
-
-        with col2:
-            leg_sel = st.selectbox("Legislação", [f"ID {l[0]} - {l[1]}" for l in legs], key="val_leg_sel")
-            leg_id = int(leg_sel.split()[1])
-
-        st.divider()
-        st.subheader("📎 PDFs do Projeto")
-
-        pdfs = listar_pdfs_projeto(proc_id)
-        if pdfs:
-            for idx, pdf in enumerate(pdfs):
-                col_a, col_b, col_c = st.columns([3, 1, 1])
-                col_a.write(f"📄 {pdf[1]} ({pdf[2]})")
-
-                pdf_nome, pdf_cont = obter_pdf_projeto_por_id(pdf[0])
-                if pdf_cont:
-                    col_b.download_button("⬇️", pdf_cont, pdf_nome, key=f"val_dl_{idx}")
-                    if col_c.button("🗑️", key=f"val_del_{idx}"):
-                        deletar_pdf_projeto(pdf[0])
-                        st.rerun()
-
-        novos = st.file_uploader("Anexar PDFs", type=['pdf'], accept_multiple_files=True, key="val_upload")
-        tipo = st.selectbox("Tipo", ["Planta Baixa", "Corte", "Fachada", "Situação"], key="val_tipo")
-
-        if novos and st.button("💾 Salvar", key="val_save_btn"):
-            for pdf in novos:
-                anexar_pdf_projeto(proc_id, pdf, tipo)
-            st.success(f"✅ {len(novos)} PDF(s) anexado(s)!")
-            st.rerun()
-
-        st.divider()
-
-        usar_ia = st.checkbox("🤖 Usar análise com IA Gemini Pro", value=True, key="usar_ia_check", 
-                             disabled=not st.session_state.gemini_api_key)
-
-        if st.button("🔍 VALIDAR PROJETO", key="val_btn", type="primary"):
-            with st.spinner("🤖 Analisando projeto com IA..."):
-                resultado = validar_processo(proc_id, leg_id, usar_ia)
-
-            if resultado:
-                st.divider()
-                st.subheader(f"📋 Resultado - {resultado['numero_processo']}")
-
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Regras", resultado['total_regras'])
-                col2.metric("✅ Conformes", resultado['total_conformidades'])
-                col3.metric("❌ Violações", resultado['total_violacoes'])
-
-                if resultado['total_violacoes'] == 0:
-                    st.success("🎉 APROVADO")
-                else:
-                    st.error(f"⚠️ REPROVADO")
-
-                # Análise da IA
-                if resultado.get('analise_ia'):
-                    with st.expander("🤖 ANÁLISE DETALHADA DA IA", expanded=True):
-                        st.markdown(resultado['analise_ia'])
-
-                st.divider()
-
-                # Gerar PDF
-                pdf_rel = gerar_relatorio_pdf_com_ia(resultado, resultado.get('analise_ia'))
-                if pdf_rel:
+                    # Gerar análise
+                    resposta_gemini = model.generate_content(prompt_analise)
+
+                    # Exibir resultado
+                    st.divider()
+                    st.header("📋 RELATÓRIO DE ANÁLISE TÉCNICA")
+
+                    # Determinar status
+                    texto_resposta = resposta_gemini.text.upper()
+                    if "APROVADO" in texto_resposta and "REPROVADO" not in texto_resposta:
+                        st.success("✅ PROJETO APROVADO")
+                    elif "REPROVADO" in texto_resposta:
+                        st.error("❌ PROJETO REPROVADO")
+                    else:
+                        st.warning("⚠️ ANÁLISE INCONCLUSIVA - Revisar manualmente")
+
+                    st.divider()
+
+                    # Exibir análise
+                    st.markdown(resposta_gemini.text)
+
+                    # Preparar relatório para download
+                    relatorio_completo = f"""
+================================================================================
+PREFEITURA DE CONTAGEM - MG
+RELATÓRIO DE ANÁLISE DE PROJETO ARQUITETÔNICO
+================================================================================
+
+PROCESSO: {numero_processo}
+REQUERENTE: {nome_requerente}
+ÁREA TOTAL: {area_total}m²
+DATA DA ANÁLISE: {datetime.now().strftime('%d/%m/%Y às %H:%M')}
+
+DOCUMENTOS ANALISADOS:
+- Projeto: {len(projetos_upload)} arquivo(s) PDF
+- Legislação: {len(legislacoes_upload)} arquivo(s) PDF
+
+REGRAS VERIFICADAS:
+{regras_texto}
+
+================================================================================
+ANÁLISE TÉCNICA
+================================================================================
+
+{resposta_gemini.text}
+
+================================================================================
+OBSERVAÇÕES:
+- Análise realizada por Inteligência Artificial (Google Gemini Pro)
+- Este relatório possui caráter orientativo
+- A validação final deve ser confirmada por análise presencial
+================================================================================
+
+Sistema de Validação com IA
+Prefeitura de Contagem - Setor de Liberação de Alvarás
+Gerado em: {datetime.now().strftime('%d/%m/%Y às %H:%M')}
+"""
+
+                    # Botão de download
+                    st.divider()
                     st.download_button(
-                        "📥 BAIXAR RELATÓRIO COMPLETO",
-                        pdf_rel,
-                        f"relatorio_{resultado['numero_processo']}.pdf",
-                        "application/pdf",
-                        type="primary",
-                        key="val_download_btn"
+                        label="📥 BAIXAR RELATÓRIO COMPLETO (TXT)",
+                        data=relatorio_completo,
+                        file_name=f"relatorio_{numero_processo.replace('.', '_').replace('/', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                        type="primary"
                     )
 
-                if resultado['violacoes']:
-                    with st.expander("❌ Violações Encontradas"):
-                        for v in resultado['violacoes']:
-                            st.error(f"**{v['artigo']}:** {v['descricao']}")
-                            st.write(f"📌 {v['mensagem']}")
-    else:
-        st.warning("⚠️ Cadastre processos e legislações primeiro!")
+                except Exception as erro_analise:
+                    st.error(f"❌ Erro durante a análise: {str(erro_analise)}")
+                    st.info("Verifique se sua API Key está correta e se os PDFs são válidos.")
+
+with tab2:
+    st.header("❓ Como Usar o Sistema")
+
+    st.markdown("""
+    ### 📝 Passo a Passo:
+
+    1. **Configure a API Key** na barra lateral esquerda
+       - Acesse: https://aistudio.google.com/app/apikey
+       - Faça login e crie uma chave
+       - Cole no campo da barra lateral
+
+    2. **Anexe os PDFs do Projeto**
+       - Plantas baixas
+       - Cortes
+       - Fachadas
+       - Outros documentos técnicos
+
+    3. **Anexe os PDFs da Legislação**
+       - Lei de Uso e Ocupação do Solo
+       - Código de Obras
+       - Decretos municipais aplicáveis
+
+    4. **Preencha os dados** do processo
+
+    5. **Digite as regras** que devem ser verificadas
+
+    6. **Clique em "Analisar"** e aguarde
+
+    7. **Baixe o relatório** gerado
+
+    ### 🔐 Segurança:
+    - Sua API Key não é armazenada
+    - Os PDFs são processados apenas durante a análise
+    - Nenhum dado é salvo no servidor
+
+    ### ⚠️ Importante:
+    - A análise é orientativa
+    - Validação final deve ser presencial
+    - Sempre consulte a legislação atualizada
+    """)
 
 st.divider()
 st.markdown("---")
-st.markdown("<div style='text-align: center'><p><strong>🏛️ Sistema de Validação com IA</strong></p><p>Prefeitura de Contagem • Powered by Google Gemini Pro</p></div>", unsafe_allow_html=True)
+st.markdown("""
+<div style='text-align: center'>
+    <p><strong>🏛️ Sistema de Validação com Inteligência Artificial</strong></p>
+    <p>Prefeitura de Contagem - MG</p>
+    <p style='font-size: 0.85em; color: #666;'>Powered by Google Gemini Pro • Desenvolvido com Streamlit</p>
+</div>
+""", unsafe_allow_html=True)
