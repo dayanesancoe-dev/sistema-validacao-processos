@@ -277,6 +277,7 @@ with tab2:
                 col_a, col_b = st.columns([4, 1])
                 col_a.write(f"**ID {leg[0]}** - {leg[1]}")
 
+                # Verificar se tem PDF
                 pdf_nome, pdf_conteudo = obter_pdf_legislacao(leg[0])
                 if pdf_conteudo:
                     col_b.download_button(
@@ -332,14 +333,14 @@ with tab3:
 
         with col1:
             proc_selecionado = st.selectbox("Selecione o processo",
-                                           options=[f"ID {p[0]} - {p[1]}" for p in processos],
-                                           key="select_proc_validar")
+                                          options=[f"ID {p[0]} - {p[1]}" for p in processos],
+                                          key="select_proc_validar")
             proc_id = int(proc_selecionado.split()[1])
 
         with col2:
             leg_selecionada = st.selectbox("Selecione a legislação",
-                                          options=[f"ID {l[0]} - {l[1]}" for l in legislacoes],
-                                          key="select_leg_validar")
+                                         options=[f"ID {l[0]} - {l[1]}" for l in legislacoes],
+                                         key="select_leg_validar")
             leg_id = int(leg_selecionada.split()[1])
 
         if st.button("🔍 Validar", key="btn_validar"):
@@ -379,27 +380,28 @@ with tab4:
 
     if processos and legislacoes:
         proc_selecionado = st.selectbox("Selecione o processo",
-                                       options=[f"ID {p[0]} - {p[1]}" for p in processos],
-                                       key="select_proc_relatorio")
+                                      options=[f"ID {p[0]} - {p[1]}" for p in processos],
+                                      key="select_proc_relatorio")
         proc_id = int(proc_selecionado.split()[1])
 
         leg_selecionada = st.selectbox("Selecione a legislação",
-                                      options=[f"ID {l[0]} - {l[1]}" for l in legislacoes],
-                                      key="select_leg_relatorio")
+                                     options=[f"ID {l[0]} - {l[1]}" for l in legislacoes],
+                                     key="select_leg_relatorio")
         leg_id = int(leg_selecionada.split()[1])
 
         if st.button("📊 Gerar Relatório Excel", key="btn_relatorio"):
             resultado = validar_processo(proc_id, leg_id)
 
             if resultado:
+                # Criar Excel
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     # Aba 1: Resumo
                     resumo_data = {
                         'Campo': ['Número do Processo', 'Requerente', 'Total de Regras', 'Conformidades', 'Violações', 'Data'],
                         'Valor': [resultado['numero_processo'], resultado['requerente'],
-                                 resultado['total_regras'], resultado['total_conformidades'],
-                                 resultado['total_violacoes'], datetime.now().strftime('%d/%m/%Y %H:%M')]
+                                resultado['total_regras'], resultado['total_conformidades'],
+                                resultado['total_violacoes'], datetime.now().strftime('%d/%m/%Y %H:%M')]
                     }
                     df_resumo = pd.DataFrame(resumo_data)
                     df_resumo.to_excel(writer, sheet_name='Resumo', index=False)
@@ -415,6 +417,7 @@ with tab4:
                         df_viol.to_excel(writer, sheet_name='Violações', index=False)
 
                 output.seek(0)
+
                 st.download_button(
                     label="📥 Baixar Relatório Excel",
                     data=output.getvalue(),
