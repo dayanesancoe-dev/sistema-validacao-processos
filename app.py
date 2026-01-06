@@ -4,12 +4,26 @@ import pandas as pd
 from datetime import datetime
 import io
 import re
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+
+# Tentar importar PyPDF2 e reportlab
+try:
+    import PyPDF2
+    PDF_DISPONIVEL = True
+except ImportError:
+    PDF_DISPONIVEL = False
+    st.warning("⚠️ PyPDF2 não instalado. Instale com: pip install PyPDF2")
+
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+    REPORTLAB_DISPONIVEL = True
+except ImportError:
+    REPORTLAB_DISPONIVEL = False
+    st.warning("⚠️ ReportLab não instalado. Instale com: pip install reportlab")
 
 # Configuração da página
 st.set_page_config(
@@ -97,8 +111,10 @@ conn, cursor = init_db()
 
 def extrair_texto_pdf(pdf_bytes):
     """Extrai texto de um PDF em bytes"""
+    if not PDF_DISPONIVEL:
+        return "[PyPDF2 não instalado]"
+
     try:
-        import PyPDF2
         pdf_file = io.BytesIO(pdf_bytes)
         pdf_reader = PyPDF2.PdfReader(pdf_file)
         texto = ""
@@ -116,7 +132,6 @@ def analisar_texto_projeto(texto_projeto, regras):
         artigo = regra[1]
         descricao = regra[2]
 
-        # Buscar palavras-chave da regra no texto do projeto
         palavras_chave = extrair_palavras_chave(descricao)
         encontradas = []
 
@@ -143,19 +158,21 @@ def analisar_texto_projeto(texto_projeto, regras):
 
 def extrair_palavras_chave(texto):
     """Extrai palavras-chave relevantes de um texto"""
-    # Remove palavras comuns
     stopwords = ['de', 'da', 'do', 'a', 'o', 'e', 'para', 'com', 'em', 'ser', 'deve', 'que', 'ter']
     palavras = re.findall(r'\b\w{4,}\b', texto.lower())
-    return [p for p in palavras if p not in stopwords][:5]  # Top 5 palavras
+    return [p for p in palavras if p not in stopwords][:5]
 
 def gerar_relatorio_pdf(resultado, analise_textual):
     """Gera um relatório em PDF com os resultados da validação"""
+    if not REPORTLAB_DISPONIVEL:
+        st.error("ReportLab não está instalado. Instale com: pip install reportlab")
+        return None
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
     story = []
     styles = getSampleStyleSheet()
 
-    # Estilos personalizados
     titulo_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
@@ -173,19 +190,17 @@ def gerar_relatorio_pdf(resultado, analise_textual):
         spaceAfter=12
     )
 
-    # Cabeçalho
-    story.append(Paragraph("🏛️ RELATÓRIO DE ANÁLISE DE CONFORMIDADE", titulo_style))
+    story.append(Paragraph("RELATÓRIO DE ANÁLISE DE CONFORMIDADE", titulo_style))
     story.append(Paragraph("Prefeitura de Contagem - Setor de Liberação de Alvarás", styles['Normal']))
     story.append(Spacer(1, 0.5*cm))
 
-    # Informações do processo
     story.append(Paragraph("DADOS DO PROCESSO", subtitulo_style))
 
     dados_processo = [
         ['Número do Processo:', resultado['numero_processo']],
         ['Requerente:', resultado['requerente']],
         ['Data do Relatório:', datetime.now().strftime('%d/%m/%Y às %H:%M')],
-        ['Status:', 'APROVADO ✓' if resultado['total_violacoes'] == 0 else 'REPROVADO ✗']
+        ['Status:', 'APROVADO' if resultado['total_violacoes'] == 0 else 'REPROVADO']
     ]
 
     tabela_processo = Table(dados_processo, colWidths=[5*cm, 10*cm])
@@ -194,105 +209,53 @@ def gerar_relatorio_pdf(resultado, analise_textual):
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 0), (-1, -1), 10),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 10),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
     ]))
     story.append(tabela_processo)
     story.append(Spacer(1, 0.8*cm))
 
-    # Resumo da validação
     story.append(Paragraph("RESUMO DA VALIDAÇÃO", subtitulo_style))
 
     resumo_dados = [
-        ['Total de Regras Analisadas', str(resultado['total_regras'])],
+        ['Total de Regras', str(resultado['total_regras'])],
         ['Conformidades', str(resultado['total_conformidades'])],
         ['Violações', str(resultado['total_violacoes'])]
     ]
 
     tabela_resumo = Table(resumo_dados, colWidths=[8*cm, 7*cm])
     tabela_resumo.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34a853')),
-        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#34a853')),
-        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#ea4335') if resultado['total_violacoes'] > 0 else colors.HexColor('#34a853')),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#34a853') if resultado['total_violacoes'] == 0 else colors.HexColor('#ea4335')),
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 12),
         ('GRID', (0, 0), (-1, -1), 1, colors.white),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 12),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
     ]))
     story.append(tabela_resumo)
     story.append(Spacer(1, 1*cm))
 
-    # Violações (se houver)
     if resultado['violacoes']:
         story.append(PageBreak())
-        story.append(Paragraph("⚠️ PONTOS QUE DEVEM SER CORRIGIDOS", subtitulo_style))
+        story.append(Paragraph("PONTOS QUE DEVEM SER CORRIGIDOS", subtitulo_style))
         story.append(Spacer(1, 0.3*cm))
 
         for i, v in enumerate(resultado['violacoes'], 1):
-            # Box vermelho para cada violação
-            violacao_texto = f"""
-            <b>Violação {i}: {v['artigo']}</b><br/>
-            <b>Descrição:</b> {v['descricao']}<br/>
-            <b>Problema:</b> {v['mensagem']}<br/>
-            <b>Valor Esperado:</b> {v['valor_esperado']}<br/>
-            <b>Valor Encontrado:</b> {v['valor_encontrado']}
-            """
-
+            violacao_texto = f"<b>Violação {i}: {v['artigo']}</b><br/><b>Descrição:</b> {v['descricao']}<br/><b>Problema:</b> {v['mensagem']}<br/><b>Esperado:</b> {v['valor_esperado']}<br/><b>Encontrado:</b> {v['valor_encontrado']}"
             story.append(Paragraph(violacao_texto, styles['Normal']))
             story.append(Spacer(1, 0.5*cm))
 
-    # Conformidades
     if resultado['conformidades']:
         story.append(PageBreak())
-        story.append(Paragraph("✓ REGRAS CONFORMES", subtitulo_style))
-        story.append(Spacer(1, 0.3*cm))
-
-        for i, c in enumerate(resultado['conformidades'], 1):
-            conf_texto = f"<b>{i}. {c['artigo']}:</b> {c['descricao']}"
-            story.append(Paragraph(conf_texto, styles['Normal']))
+        story.append(Paragraph("REGRAS CONFORMES", subtitulo_style))
+        for c in resultado['conformidades']:
+            story.append(Paragraph(f"<b>{c['artigo']}:</b> {c['descricao']}", styles['Normal']))
             story.append(Spacer(1, 0.2*cm))
 
-    # Análise textual dos PDFs
-    if analise_textual:
-        story.append(PageBreak())
-        story.append(Paragraph("📄 ANÁLISE DOS DOCUMENTOS ANEXADOS", subtitulo_style))
-        story.append(Spacer(1, 0.3*cm))
-
-        for analise in analise_textual:
-            if analise['status'] == 'nao_encontrado':
-                cor_status = colors.HexColor('#ea4335')
-                icone = '✗'
-            else:
-                cor_status = colors.HexColor('#34a853')
-                icone = '✓'
-
-            analise_texto = f"""
-            <b>{icone} {analise['artigo']}</b><br/>
-            {analise['descricao']}<br/>
-            <i>{'Mencionado no projeto' if analise['palavras_encontradas'] else 'NÃO mencionado no projeto'}</i>
-            """
-            story.append(Paragraph(analise_texto, styles['Normal']))
-            story.append(Spacer(1, 0.3*cm))
-
-    # Rodapé
     story.append(Spacer(1, 2*cm))
     story.append(Paragraph("_" * 80, styles['Normal']))
-    story.append(Paragraph(
-        f"Relatório gerado automaticamente pelo Sistema de Validação de Processos<br/>"
-        f"Data: {datetime.now().strftime('%d/%m/%Y às %H:%M')}<br/>"
-        f"Prefeitura de Contagem - MG",
-        styles['Normal']
-    ))
+    story.append(Paragraph(f"Relatório gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')}", styles['Normal']))
 
-    # Gerar PDF
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -306,7 +269,7 @@ def cadastrar_processo(numero, requerente, rt, analista, uso, area):
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (numero, requerente, rt, analista, uso, area))
         conn.commit()
-        st.success(f"✅ Processo {numero} cadastrado com sucesso!")
+        st.success(f"✅ Processo {numero} cadastrado!")
         return True
     except sqlite3.IntegrityError:
         st.error(f"❌ Processo {numero} já existe!")
@@ -320,10 +283,10 @@ def editar_processo(processo_id, numero, requerente, rt, analista, uso, area, st
             WHERE id = ?
         ''', (numero, requerente, rt, analista, uso, area, status, processo_id))
         conn.commit()
-        st.success(f"✅ Processo {numero} atualizado com sucesso!")
+        st.success(f"✅ Processo atualizado!")
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao atualizar: {str(e)}")
+        st.error(f"❌ Erro: {str(e)}")
         return False
 
 def deletar_processo(processo_id):
@@ -331,10 +294,10 @@ def deletar_processo(processo_id):
         cursor.execute('DELETE FROM pdfs_projeto WHERE processo_id = ?', (processo_id,))
         cursor.execute('DELETE FROM processos WHERE id = ?', (processo_id,))
         conn.commit()
-        st.success("✅ Processo deletado com sucesso!")
+        st.success("✅ Processo deletado!")
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao deletar: {str(e)}")
+        st.error(f"❌ Erro: {str(e)}")
         return False
 
 def obter_processo(processo_id):
@@ -347,12 +310,9 @@ def listar_processos():
 
 def cadastrar_legislacao(nome, descricao):
     try:
-        cursor.execute('''
-            INSERT INTO legislacoes (nome, descricao)
-            VALUES (?, ?)
-        ''', (nome, descricao))
+        cursor.execute('INSERT INTO legislacoes (nome, descricao) VALUES (?, ?)', (nome, descricao))
         conn.commit()
-        st.success(f"✅ Legislação '{nome}' cadastrada com sucesso!")
+        st.success(f"✅ Legislação '{nome}' cadastrada!")
         return cursor.lastrowid
     except sqlite3.IntegrityError:
         st.error(f"❌ Legislação '{nome}' já existe!")
@@ -360,16 +320,12 @@ def cadastrar_legislacao(nome, descricao):
 
 def editar_legislacao(legislacao_id, nome, descricao):
     try:
-        cursor.execute('''
-            UPDATE legislacoes 
-            SET nome = ?, descricao = ?
-            WHERE id = ?
-        ''', (nome, descricao, legislacao_id))
+        cursor.execute('UPDATE legislacoes SET nome = ?, descricao = ? WHERE id = ?', (nome, descricao, legislacao_id))
         conn.commit()
-        st.success(f"✅ Legislação '{nome}' atualizada com sucesso!")
+        st.success(f"✅ Legislação atualizada!")
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao atualizar: {str(e)}")
+        st.error(f"❌ Erro: {str(e)}")
         return False
 
 def deletar_legislacao(legislacao_id):
@@ -378,10 +334,10 @@ def deletar_legislacao(legislacao_id):
         cursor.execute('DELETE FROM pdfs_legislacao WHERE legislacao_id = ?', (legislacao_id,))
         cursor.execute('DELETE FROM legislacoes WHERE id = ?', (legislacao_id,))
         conn.commit()
-        st.success("✅ Legislação deletada com sucesso!")
+        st.success("✅ Legislação deletada!")
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao deletar: {str(e)}")
+        st.error(f"❌ Erro: {str(e)}")
         return False
 
 def obter_legislacao(legislacao_id):
@@ -395,24 +351,16 @@ def listar_legislacoes():
 def anexar_pdf_projeto(processo_id, pdf_file, tipo_doc="Projeto"):
     try:
         pdf_bytes = pdf_file.read()
-        pdf_nome = pdf_file.name
-        cursor.execute('''
-            INSERT INTO pdfs_projeto (processo_id, pdf_nome, pdf_conteudo, tipo_documento)
-            VALUES (?, ?, ?, ?)
-        ''', (processo_id, pdf_nome, pdf_bytes, tipo_doc))
+        cursor.execute('INSERT INTO pdfs_projeto (processo_id, pdf_nome, pdf_conteudo, tipo_documento) VALUES (?, ?, ?, ?)', 
+                      (processo_id, pdf_file.name, pdf_bytes, tipo_doc))
         conn.commit()
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao anexar PDF: {str(e)}")
+        st.error(f"❌ Erro: {str(e)}")
         return False
 
 def listar_pdfs_projeto(processo_id):
-    cursor.execute('''
-        SELECT id, pdf_nome, tipo_documento, data_upload 
-        FROM pdfs_projeto 
-        WHERE processo_id = ?
-        ORDER BY data_upload DESC
-    ''', (processo_id,))
+    cursor.execute('SELECT id, pdf_nome, tipo_documento, data_upload FROM pdfs_projeto WHERE processo_id = ? ORDER BY data_upload DESC', (processo_id,))
     return cursor.fetchall()
 
 def obter_pdf_projeto_por_id(pdf_id):
@@ -435,24 +383,16 @@ def deletar_pdf_projeto(pdf_id):
 def anexar_pdf_legislacao(legislacao_id, pdf_file):
     try:
         pdf_bytes = pdf_file.read()
-        pdf_nome = pdf_file.name
-        cursor.execute('''
-            INSERT INTO pdfs_legislacao (legislacao_id, pdf_nome, pdf_conteudo)
-            VALUES (?, ?, ?)
-        ''', (legislacao_id, pdf_nome, pdf_bytes))
+        cursor.execute('INSERT INTO pdfs_legislacao (legislacao_id, pdf_nome, pdf_conteudo) VALUES (?, ?, ?)', 
+                      (legislacao_id, pdf_file.name, pdf_bytes))
         conn.commit()
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao anexar PDF: {str(e)}")
+        st.error(f"❌ Erro: {str(e)}")
         return False
 
 def listar_pdfs_legislacao(legislacao_id):
-    cursor.execute('''
-        SELECT id, pdf_nome, data_upload 
-        FROM pdfs_legislacao 
-        WHERE legislacao_id = ?
-        ORDER BY data_upload DESC
-    ''', (legislacao_id,))
+    cursor.execute('SELECT id, pdf_nome, data_upload FROM pdfs_legislacao WHERE legislacao_id = ? ORDER BY data_upload DESC', (legislacao_id,))
     return cursor.fetchall()
 
 def obter_pdf_legislacao_por_id(pdf_id):
@@ -471,23 +411,18 @@ def deletar_pdf_legislacao(pdf_id):
 def adicionar_regra(leg_id, artigo, descricao, campo, operador, valor, mensagem):
     try:
         cursor.execute('''
-            INSERT INTO regras_legislacao
-            (legislacao_id, artigo, descricao, campo_validacao, operador, valor_referencia, mensagem_erro)
+            INSERT INTO regras_legislacao (legislacao_id, artigo, descricao, campo_validacao, operador, valor_referencia, mensagem_erro)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (leg_id, artigo, desc valor, mensagem))
+        ''', (leg_id, artigo, descricao, campo, operador, valor, mensagem))
         conn.commit()
-        st.success(f"✅ Regra '{artigo}' adicionada com sucesso!")
+        st.success(f"✅ Regra '{artigo}' adicionada!")
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao adicionar regra: {str(e)}")
+        st.error(f"❌ Erro: {str(e)}")
         return False
 
 def listar_regras_legislacao(legislacao_id):
-    cursor.execute('''
-        SELECT id, artigo, descricao, campo_validacao, operador, valor_referencia, mensagem_erro
-        FROM regras_legislacao
-        WHERE legislacao_id = ?
-    ''', (legislacao_id,))
+    cursor.execute('SELECT id, artigo, descricao, campo_validacao, operador, valor_referencia, mensagem_erro FROM regras_legislacao WHERE legislacao_id = ?', (legislacao_id,))
     return cursor.fetchall()
 
 def deletar_regra(regra_id):
@@ -505,11 +440,7 @@ def validar_processo(processo_id, legislacao_id):
     if not processo:
         return None
 
-    cursor.execute('''
-        SELECT id, artigo, descricao, campo_validacao, operador, valor_referencia, mensagem_erro
-        FROM regras_legislacao
-        WHERE legislacao_id = ?
-    ''', (legislacao_id,))
+    cursor.execute('SELECT id, artigo, descricao, campo_validacao, operador, valor_referencia, mensagem_erro FROM regras_legislacao WHERE legislacao_id = ?', (legislacao_id,))
     regras = cursor.fetchall()
 
     conformidades = []
@@ -534,8 +465,8 @@ def validar_processo(processo_id, legislacao_id):
             continue
 
         valor_campo = campos_processo[campo]
-
         resultado = False
+
         try:
             if operador == '>=':
                 resultado = float(valor_campo) >= float(valor_ref)
@@ -553,11 +484,7 @@ def validar_processo(processo_id, legislacao_id):
             pass
 
         if resultado:
-            conformidades.append({
-                'artigo': regra[1],
-                'descricao': regra[2],
-                'id': regra[0]
-            })
+            conformidades.append({'artigo': regra[1], 'descricao': regra[2], 'id': regra[0]})
         else:
             violacoes.append({
                 'artigo': regra[1],
@@ -569,15 +496,13 @@ def validar_processo(processo_id, legislacao_id):
                 'id': regra[0]
             })
 
-    # Extrair texto dos PDFs do projeto
     pdfs_projeto = obter_todos_pdfs_projeto(processo_id)
     texto_projeto_completo = ""
     for pdf_bytes in pdfs_projeto:
         if pdf_bytes and pdf_bytes[0]:
             texto_projeto_completo += extrair_texto_pdf(pdf_bytes[0]) + "\n\n"
 
-    # Analisar texto do projeto
-    analise_textual = analisar_texto_projeto(texto_projeto_completo, regras)
+    analise_textual = analisar_texto_projeto(texto_projeto_completo, regras) if texto_projeto_completo else []
 
     return {
         'numero_processo': processo[1],
@@ -594,8 +519,6 @@ def validar_processo(processo_id, legislacao_id):
 
 tab1, tab2, tab3, tab4 = st.tabs(["📝 Processos", "📚 Legislações", "✅ Validar", "📊 Relatórios"])
 
-# [... código das abas 1 e 2 permanece igual ao código anterior ...]
-
 # ABA 1: PROCESSOS
 with tab1:
     st.header("Gerenciar Processos")
@@ -603,41 +526,31 @@ with tab1:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("➕ Cadastrar Novo Processo")
-        numero = st.text_input("Número do processo", placeholder="Ex: 2024.001", key="novo_numero")
-        requerente = st.text_input("Requerente", placeholder="Nome da pessoa/empresa", key="novo_requerente")
-        rt = st.text_input("RT (Responsável Técnico)", placeholder="Nome do arquiteto/engenheiro", key="novo_rt")
-        analista = st.text_input("Analista", placeholder="Seu nome", key="novo_analista")
-        uso = st.selectbox("Uso do imóvel", ["Residencial", "Comercial", "Industrial", "Misto", "Outro"], key="novo_uso")
-        area = st.number_input("Área total (m²)", min_value=0.0, step=0.1, key="nova_area")
+        st.subheader("➕ Cadastrar Processo")
+        numero = st.text_input("Número", key="novo_numero")
+        requerente = st.text_input("Requerente", key="novo_requerente")
+        rt = st.text_input("RT", key="novo_rt")
+        analista = st.text_input("Analista", key="novo_analista")
+        uso = st.selectbox("Uso", ["Residencial", "Comercial", "Industrial", "Misto", "Outro"], key="novo_uso")
+        area = st.number_input("Área (m²)", min_value=0.0, step=0.1, key="nova_area")
 
-        if st.button("Cadastrar Processo", key="btn_cadastrar_processo"):
+        if st.button("Cadastrar", key="btn_cad_proc"):
             if numero and requerente and rt and analista and area > 0:
-                if cadastrar_processo(numero, requerente, rt, analista, uso, area):
-                    st.rerun()
-            else:
-                st.error("❌ Preencha todos os campos!")
+                cadastrar_processo(numero, requerente, rt, analista, uso, area)
+                st.rerun()
 
     with col2:
-        st.subheader("📋 Processos Cadastrados")
+        st.subheader("📋 Processos")
         processos = listar_processos()
         if processos:
             for proc in processos:
-                with st.expander(f"**{proc[1]}** - {proc[2]}"):
-                    st.write(f"**RT:** {proc[3]} | **Uso:** {proc[4]} | **Área:** {proc[5]} m²")
-
-                    col_edit, col_del = st.columns(2)
-                    if col_edit.button("✏️ Editar", key=f"btn_edit_proc_{proc[0]}"):
-                        st.session_state[f'editando_proc_{proc[0]}'] = True
+                with st.expander(f"{proc[1]} - {proc[2]}"):
+                    st.write(f"RT: {proc[3]} | Uso: {proc[4]} | Área: {proc[5]} m²")
+                    if st.button("🗑️ Deletar", key=f"del_proc_{proc[0]}"):
+                        deletar_processo(proc[0])
                         st.rerun()
 
-                    if col_del.button("🗑️ Deletar", key=f"btn_del_proc_{proc[0]}"):
-                        if deletar_processo(proc[0]):
-                            st.rerun()
-        else:
-            st.info("Nenhum processo cadastrado ainda.")
-
-# ABA 2: LEGISLAÇÕES (igual ao anterior)
+# ABA 2: LEGISLAÇÕES
 with tab2:
     st.header("Gerenciar Legislações")
 
@@ -645,25 +558,22 @@ with tab2:
 
     with col1:
         st.subheader("➕ Cadastrar Legislação")
-        nome_leg = st.text_input("Nome da legislação", key="nova_leg_nome")
-        desc_leg = st.text_area("Descrição", key="nova_leg_desc")
+        nome_leg = st.text_input("Nome", key="nova_leg")
+        desc_leg = st.text_area("Descrição", key="nova_desc_leg")
 
-        if st.button("Cadastrar Legislação", key="btn_cadastrar_leg"):
+        if st.button("Cadastrar", key="btn_cad_leg"):
             if nome_leg and desc_leg:
                 cadastrar_legislacao(nome_leg, desc_leg)
                 st.rerun()
 
     with col2:
-        st.subheader("📚 Legislações Cadastradas")
+        st.subheader("📚 Legislações")
         legislacoes = listar_legislacoes()
         if legislacoes:
             for leg in legislacoes:
-                with st.expander(f"**{leg[1]}**"):
+                with st.expander(leg[1]):
                     st.write(leg[2])
-                    col_edit, col_del = st.columns(2)
-                    if col_edit.button("✏️", key=f"edit_leg_{leg[0]}"):
-                        st.session_state[f'editando_leg_{leg[0]}'] = True
-                    if col_del.button("🗑️", key=f"del_leg_{leg[0]}"):
+                    if st.button("🗑️ Deletar", key=f"del_leg_{leg[0]}"):
                         deletar_legislacao(leg[0])
                         st.rerun()
 
@@ -674,25 +584,37 @@ with tab2:
         leg_sel = st.selectbox("Legislação", [f"ID {l[0]} - {l[1]}" for l in legislacoes], key="sel_leg")
         leg_id = int(leg_sel.split()[1])
 
+        regras = listar_regras_legislacao(leg_id)
+        if regras:
+            st.write("**Regras:**")
+            for r in regras:
+                col_r, col_d = st.columns([5, 1])
+                col_r.write(f"📌 {r[1]}: {r[2]}")
+                if col_d.button("🗑️", key=f"del_r_{r[0]}"):
+                    deletar_regra(r[0])
+                    st.rerun()
+
+        st.divider()
         col1, col2 = st.columns(2)
+
         with col1:
-            artigo = st.text_input("Artigo", key="novo_artigo")
+            artigo = st.text_input("Artigo", key="novo_art")
             descricao = st.text_area("Descrição", key="nova_desc")
-            campo = st.selectbox("Campo", ["area_total", "uso", "estatus"], key="novo_campo")
+            campo = st.selectbox("Campo", ["area_total", "uso", "estatus", "numero_processo"], key="novo_campo")
 
         with col2:
             operador = st.selectbox("Operador", [">=", "<=", ">", "<", "==", "!="], key="novo_op")
             valor = st.number_input("Valor", step=0.1, key="novo_val")
-            mensagem = st.text_input("Mensagem de erro", key="nova_msg")
+            mensagem = st.text_input("Mensagem", key="nova_msg")
 
-        if st.button("Adicionar Regra"):
+        if st.button("Adicionar Regra", key="btn_add_regra"):
             if artigo and descricao and mensagem:
                 adicionar_regra(leg_id, artigo, descricao, campo, operador, valor, mensagem)
                 st.rerun()
 
-# ABA 3: VALIDAR (NOVA VERSÃO COM ANÁLISE)
+# ABA 3: VALIDAR
 with tab3:
-    st.header("Validar Processo e Gerar Relatório")
+    st.header("Validar e Gerar Relatório")
 
     processos = listar_processos()
     legislacoes = listar_legislacoes()
@@ -701,99 +623,84 @@ with tab3:
         col1, col2 = st.columns(2)
 
         with col1:
-            proc_sel = st.selectbox("Processo", [f"ID {p[0]} - {p[1]}" for p in processos], key="sel_proc_val")
+            proc_sel = st.selectbox("Processo", [f"ID {p[0]} - {p[1]}" for p in processos], key="sel_proc")
             proc_id = int(proc_sel.split()[1])
 
         with col2:
-            leg_sel = st.selectbox("Legislação", [f"ID {l[0]} - {l[1]}" for l in legislacoes], key="sel_leg_val")
+            leg_sel = st.selectbox("Legislação", [f"ID {l[0]} - {l[1]}" for l in legislacoes], key="sel_leg")
             leg_id = int(leg_sel.split()[1])
 
         st.divider()
         st.subheader("📎 PDFs do Projeto")
 
-        pdfs_anexados = listar_pdfs_projeto(proc_id)
-        if pdfs_anexados:
-            for pdf in pdfs_anexados:
+        pdfs = listar_pdfs_projeto(proc_id)
+        if pdfs:
+            for pdf in pdfs:
                 col_a, col_b, col_c = st.columns([3, 1, 1])
                 col_a.write(f"📄 {pdf[1]}")
 
                 pdf_nome, pdf_cont = obter_pdf_projeto_por_id(pdf[0])
                 if pdf_cont:
-                    col_b.download_button("⬇️", pdf_cont, pdf_nome, mime="application/pdf", key=f"dl_{pdf[0]}")
-                    if col_c.button("🗑️", key=f"del_{pdf[0]}"):
+                    col_b.download_button("⬇️", pdf_cont, pdf_nome, mime="application/pdf", key=f"dl_p_{pdf[0]}")
+                    if col_c.button("🗑️", key=f"del_p_{pdf[0]}"):
                         deletar_pdf_projeto(pdf[0])
                         st.rerun()
 
-        novos_pdfs = st.file_uploader("Anexar PDFs", type=['pdf'], accept_multiple_files=True, key="up_pdfs")
-        tipo = st.selectbox("Tipo", ["Planta Baixa", "Corte", "Fachada", "Situação"], key="tipo_doc")
+        novos = st.file_uploader("Anexar PDFs", type=['pdf'], accept_multiple_files=True, key="up_pdfs")
+        tipo = st.selectbox("Tipo", ["Planta Baixa", "Corte", "Fachada", "Situação"], key="tipo")
 
-        if novos_pdfs and st.button("💾 Salvar"):
-            for pdf in novos_pdfs:
+        if novos and st.button("💾 Salvar"):
+            for pdf in novos:
                 anexar_pdf_projeto(proc_id, pdf, tipo)
-            st.success(f"✅ {len(novos_pdfs)} PDF(s) anexado(s)!")
+            st.success(f"✅ {len(novos)} PDF(s) anexado(s)!")
             st.rerun()
 
         st.divider()
 
-        if st.button("🔍 VALIDAR E GERAR RELATÓRIO PDF", key="btn_val", type="primary"):
-            with st.spinner("Analisando projeto conforme legislação..."):
+        if st.button("🔍 VALIDAR", key="btn_val", type="primary"):
+            with st.spinner("Analisando..."):
                 resultado = validar_processo(proc_id, leg_id)
 
             if resultado:
                 st.divider()
-                st.subheader(f"📋 Resultado - Processo {resultado['numero_processo']}")
+                st.subheader(f"Resultado - {resultado['numero_processo']}")
 
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Regras", resultado['total_regras'])
-                col2.metric("✅ Conformes", resultado['total_conformidades'])
-                col3.metric("❌ Violações", resultado['total_violacoes'])
+                col2.metric("✅", resultado['total_conformidades'])
+                col3.metric("❌", resultado['total_violacoes'])
 
                 if resultado['total_violacoes'] == 0:
-                    st.success("🎉 **APROVADO** - Projeto conforme!")
+                    st.success("🎉 APROVADO")
                 else:
-                    st.error(f"⚠️ **REPROVADO** - {resultado['total_violacoes']} violação(ões)")
+                    st.error(f"⚠️ REPROVADO - {resultado['total_violacoes']} violação(ões)")
 
                 st.divider()
 
-                # Gerar PDF do relatório
-                pdf_relatorio = gerar_relatorio_pdf(resultado, resultado['analise_textual'])
+                pdf_rel = gerar_relatorio_pdf(resultado, resultado['analise_textual'])
+                if pdf_rel:
+                    st.download_button(
+                        "📥 BAIXAR RELATÓRIO PDF",
+                        pdf_rel,
+                        f"relatorio_{resultado['numero_processo']}.pdf",
+                        "application/pdf",
+                        type="primary"
+                    )
 
-                st.download_button(
-                    label="📥 BAIXAR RELATÓRIO COMPLETO (PDF)",
-                    data=pdf_relatorio,
-                    file_name=f"relatorio_{resultado['numero_processo']}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                    mime="application/pdf",
-                    type="primary"
-                )
-
-                # Mostrar preview
                 if resultado['violacoes']:
-                    with st.expander("❌ Violações Encontradas", expanded=True):
+                    with st.expander("❌ Violações", expanded=True):
                         for v in resultado['violacoes']:
                             st.error(f"**{v['artigo']}:** {v['descricao']}")
                             st.write(f"📌 {v['mensagem']}")
                             st.write(f"Esperado: `{v['valor_esperado']}` | Encontrado: `{v['valor_encontrado']}`")
-                            st.divider()
-
-                if resultado['conformidades']:
-                    with st.expander("✅ Regras Conformes"):
-                        for c in resultado['conformidades']:
-                            st.success(f"**{c['artigo']}:** {c['descricao']}")
     else:
         st.warning("⚠️ Cadastre processos e legislações primeiro!")
 
 # ABA 4: RELATÓRIOS
 with tab4:
-    st.header("Histórico de Relatórios")
-    st.info("Os relatórios são gerados na aba 'Validar' e podem ser baixados em PDF.")
+    st.header("Histórico")
+    st.info("Os relatórios são gerados na aba 'Validar'")
 
-# Rodapé
 st.divider()
 st.markdown("---")
-st.markdown("""
-<div style='text-align: center'>
-    <p><strong>🏛️ Sistema de Validação de Processos</strong></p>
-    <p>Prefeitura de Contagem — Setor de Liberação de Alvarás</p>
-    <p style='font-size: 0.8em; color: gray;'>Desenvolvido com Streamlit + ReportLab</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center'><p><strong>🏛️ Sistema de Validação de Processos</strong></p><p>Prefeitura de Contagem</p></div>", unsafe_allow_html=True)
