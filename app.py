@@ -42,8 +42,6 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT UNIQUE NOT NULL,
             descricao TEXT,
-            pdf_nome TEXT,
-            pdf_conteudo BLOB,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -61,6 +59,17 @@ def init_db():
             FOREIGN KEY (legislacao_id) REFERENCES legislacoes(id)
         )
     ''')
+
+    # Adicionar colunas de PDF se não existirem
+    try:
+        cursor.execute('ALTER TABLE legislacoes ADD COLUMN pdf_nome TEXT')
+    except sqlite3.OperationalError:
+        pass  # Coluna já existe
+
+    try:
+        cursor.execute('ALTER TABLE legislacoes ADD COLUMN pdf_conteudo BLOB')
+    except sqlite3.OperationalError:
+        pass  # Coluna já existe
 
     conn.commit()
     return conn, cursor
@@ -112,9 +121,13 @@ def listar_legislacoes():
     return cursor.fetchall()
 
 def obter_pdf_legislacao(legislacao_id):
-    cursor.execute('SELECT pdf_nome, pdf_conteudo FROM legislacoes WHERE id = ?', (legislacao_id,))
-    resultado = cursor.fetchone()
-    return resultado if resultado else (None, None)
+    try:
+        cursor.execute('SELECT pdf_nome, pdf_conteudo FROM legislacoes WHERE id = ?', (legislacao_id,))
+        resultado = cursor.fetchone()
+        return resultado if resultado else (None, None)
+    except sqlite3.OperationalError:
+        # Colunas de PDF não existem ainda
+        return (None, None)
 
 def adicionar_regra(leg_id, artigo, descricao, campo, operador, valor, mensagem):
     try:
@@ -178,18 +191,21 @@ def validar_processo(processo_id, legislacao_id):
 
         # Validar
         resultado = False
-        if operador == '>=':
-            resultado = float(valor_campo) >= float(valor_ref)
-        elif operador == '<=':
-            resultado = float(valor_campo) <= float(valor_ref)
-        elif operador == '>':
-            resultado = float(valor_campo) > float(valor_ref)
-        elif operador == '<':
-            resultado = float(valor_campo) < float(valor_ref)
-        elif operador == '==':
-            resultado = str(valor_campo) == str(valor_ref)
-        elif operador == '!=':
-            resultado = str(valor_campo) != str(valor_ref)
+        try:
+            if operador == '>=':
+                resultado = float(valor_campo) >= float(valor_ref)
+            elif operador == '<=':
+                resultado = float(valor_campo) <= float(valor_ref)
+            elif operador == '>':
+                resultado = float(valor_campo) > float(valor_ref)
+            elif operador == '<':
+                resultado = float(valor_campo) < float(valor_ref)
+            elif operador == '==':
+                resultado = str(valor_campo) == str(valor_ref)
+            elif operador == '!=':
+                resultado = str(valor_campo) != str(valor_ref)
+        except:
+            pass
 
         if resultado:
             conformidades.append({
