@@ -1,6 +1,3 @@
-streamlit
-PyPDF2
-reportlab
-pandas
-openpyxl
-pip install google-generativeai PyPDF2 reportlab
+streamlit>=1.28.0
+google-generativeai>=0.3.0
+PyPDF2>=3.0.0
