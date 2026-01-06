@@ -45,7 +45,7 @@ def init_db():
             FOREIGN KEY (processo_id) REFERENCES processos(id)
         )''')
 
-        # Tabela tramitação (NOVA)
+        # Tabela tramitação
         c.execute('''CREATE TABLE IF NOT EXISTS tramitacao (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             processo_id INTEGER NOT NULL,
@@ -142,15 +142,15 @@ def buscar_analises(pid):
     except:
         return []
 
-# ==================== FUNÇÕES TRAMITAÇÃO (NOVAS) ====================
+# ==================== FUNÇÕES TRAMITAÇÃO ====================
 
 def adicionar_tramitacao(processo_id, setor, data_entrada, observacao=""):
     """Adiciona movimentação"""
     if not conn:
         return False
     try:
-        # Fechar tramitação anterior (se houver)
         c = conn.cursor()
+        # Fechar tramitação anterior (se houver)
         c.execute('''UPDATE tramitacao 
                     SET data_saida = ? 
                     WHERE processo_id = ? AND data_saida IS NULL''',
@@ -211,49 +211,72 @@ def estatisticas_tramitacao(processo_id):
 # ==================== INTERFACE ====================
 
 st.title("🏛️ Sistema de Validação de Processos")
-st.markdown("**Prefeitura de Contagem**")
+st.markdown("**Prefeitura de Contagem** — Setor de Liberação de Alvarás")
 
 # Sidebar
 with st.sidebar:
     st.header("⚙️ Configurações")
-    api_key = st.text_input("API Key Gemini:", type="password")
+    api_key = st.text_input("API Key do Google Gemini:", type="password", 
+                            help="Obtenha em: https://aistudio.google.com/app/apikey")
 
     if api_key:
-        st.success("✅ API OK")
+        st.success("✅ API configurada")
     else:
-        st.warning("⚠️ Configure API")
+        st.warning("⚠️ Configure sua API Key")
+        st.markdown("[🔗 Obter API Key](https://aistudio.google.com/app/apikey)")
 
     st.divider()
-    st.metric("Processos", len(listar()))
+    st.metric("Total de Processos", len(listar()))
 
     st.divider()
-    if st.button("🔄 Resetar Banco"):
+    if st.button("🔄 Resetar Banco de Dados", help="Use apenas se houver erros no banco"):
         reset_database()
-        st.success("Resetado!")
+        st.success("✅ Banco resetado!")
         st.rerun()
 
-# Abas
+# Abas principais
 tab1, tab2, tab3, tab4 = st.tabs(["📝 Cadastrar", "📋 Gerenciar", "🔄 Tramitação", "🤖 Analisar"])
 
 # ==================== ABA 1: CADASTRAR ====================
 with tab1:
-    st.header("📝 Cadastrar Processo")
+    st.header("📝 Cadastrar Novo Processo")
 
     with st.form("form_cad"):
         col1, col2 = st.columns(2)
 
         with col1:
-            num = st.text_input("Número *")
-            rt = st.text_input("RT *")
-            req = st.text_input("Requerente *")
-            ana = st.text_input("Analista *")
+            num = st.text_input("Número do Processo *", placeholder="Ex: 2024.001.123")
+            rt = st.text_input("Responsável Técnico *", placeholder="Nome do RT")
+            req = st.text_input("Requerente *", placeholder="Nome do requerente")
+            ana = st.text_input("Analista *", placeholder="Nome do analista")
 
         with col2:
-            uso = st.selectbox("Uso *", ["", "Residencial", "Comercial", "Industrial", "Misto"])
-            tip = st.selectbox("Tipologia *", ["", "Casa", "Sobrado", "Edifício", "Galpão"])
-            area = st.number_input("Área (m²) *", min_value=0.0, step=0.01)
+            uso = st.selectbox("Uso *", [
+                "",
+                "Unifamiliar",
+                "Multifamiliar",
+                "Serviços",
+                "Comércio Varejista",
+                "Comércio Atacadista",
+                "Indústria",
+                "Misto",
+                "Sem destinação específica"
+            ])
+            tip = st.selectbox("Tipologia *", [
+                "",
+                "Casa",
+                "Sobrado",
+                "Edifício",
+                "Galpão",
+                "Loja",
+                "Sala Comercial",
+                "Outro"
+            ])
+            area = st.number_input("Área Construída (m²) *", min_value=0.0, step=0.01, format="%.2f")
 
-        if st.form_submit_button("✅ Cadastrar", type="primary"):
+        st.markdown("*Campos obrigatórios")
+
+        if st.form_submit_button("✅ Cadastrar Processo", type="primary", use_container_width=True):
             if num and rt and req and ana and uso and tip and area > 0:
                 ok, msg = cadastrar(num, rt, req, ana, uso, tip, area)
                 if ok:
@@ -266,7 +289,7 @@ with tab1:
                 else:
                     st.error(msg)
             else:
-                st.error("❌ Preencha todos os campos!")
+                st.error("❌ Preencha todos os campos obrigatórios!")
 
 # ==================== ABA 2: GERENCIAR ====================
 with tab2:
@@ -275,37 +298,55 @@ with tab2:
     procs = listar()
 
     if not procs:
-        st.info("📭 Nenhum processo")
+        st.info("📭 Nenhum processo cadastrado ainda")
     else:
+        st.write(f"**Total: {len(procs)} processo(s) cadastrado(s)**")
+        st.divider()
+
         for p in procs:
-            with st.expander(f"📄 {p[1]} - {p[3]}"):
-                st.write(f"**RT:** {p[2]}")
-                st.write(f"**Analista:** {p[4]}")
-                st.write(f"**Uso:** {p[5]} | **Tipologia:** {p[6]}")
-                st.write(f"**Área:** {p[7]}m²")
+            with st.expander(f"📄 Processo {p[1]} - {p[3]}"):
+                col_info, col_btn = st.columns([4, 1])
 
-                analises = buscar_analises(p[0])
-                if analises:
-                    st.divider()
-                    for a in analises:
-                        icone = "✅" if a[3] == "APROVADO" else "❌"
-                        st.write(f"{icone} {a[4]}")
+                with col_info:
+                    st.write(f"**Número:** {p[1]}")
+                    st.write(f"**RT:** {p[2]}")
+                    st.write(f"**Requerente:** {p[3]}")
+                    st.write(f"**Analista:** {p[4]}")
+                    st.write(f"**Uso:** {p[5]}")
+                    st.write(f"**Tipologia:** {p[6]}")
+                    st.write(f"**Área:** {p[7]}m²")
+                    st.write(f"**Cadastrado em:** {p[8]}")
 
-                if st.button("🗑️", key=f"del_{p[0]}"):
-                    if deletar(p[0]):
-                        st.success("Deletado!")
-                        st.rerun()
+                    # Análises
+                    analises = buscar_analises(p[0])
+                    if analises:
+                        st.divider()
+                        st.write("**📊 Histórico de Análises:**")
+                        for a in analises:
+                            icone = "✅" if a[3] == "APROVADO" else "❌" if a[3] == "REPROVADO" else "⚠️"
+                            st.write(f"{icone} {a[4]} - **{a[3]}**")
 
-# ==================== ABA 3: TRAMITAÇÃO (NOVA) ====================
+                with col_btn:
+                    if st.button("🗑️", key=f"del_{p[0]}", help="Deletar processo"):
+                        if deletar(p[0]):
+                            st.success("✅ Processo deletado!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Erro ao deletar")
+
+# ==================== ABA 3: TRAMITAÇÃO ====================
 with tab3:
     st.header("🔄 Gestão de Tramitação")
 
     procs = listar()
 
     if not procs:
-        st.info("📭 Cadastre um processo primeiro")
+        st.info("📭 Cadastre um processo primeiro na aba 'Cadastrar'")
     else:
-        proc_sel = st.selectbox("Selecione o Processo:", [f"{p[1]} - {p[3]}" for p in procs], key="tram_sel")
+        # Seleção do processo
+        proc_sel = st.selectbox("Selecione o Processo:", 
+                               [f"{p[1]} - {p[3]}" for p in procs], 
+                               key="tram_sel")
 
         if proc_sel:
             num_proc = proc_sel.split(" - ")[0]
@@ -315,7 +356,7 @@ with tab3:
                 st.divider()
 
                 # Adicionar nova movimentação
-                st.subheader("➕ Registrar Movimentação")
+                st.subheader("➕ Registrar Nova Movimentação")
 
                 col1, col2, col3 = st.columns(3)
 
@@ -329,20 +370,20 @@ with tab3:
                         "Protocolo",
                         "Arquivo"
                     ]
-                    setor = st.selectbox("Setor:", setor_opcoes, key="tram_setor")
+                    setor = st.selectbox("Setor Responsável:", setor_opcoes, key="tram_setor")
 
                 with col2:
-                    data_mov = st.date_input("Data:", key="tram_data")
+                    data_mov = st.date_input("Data da Movimentação:", key="tram_data")
 
                 with col3:
-                    obs = st.text_input("Observação:", key="tram_obs")
+                    obs = st.text_input("Observação:", key="tram_obs", placeholder="Ex: Retornou para correções")
 
-                if st.button("✅ Registrar Movimentação", type="primary"):
+                if st.button("✅ Registrar Movimentação", type="primary", use_container_width=True):
                     if adicionar_tramitacao(processo[0], setor, data_mov.strftime('%Y-%m-%d'), obs):
-                        st.success("✅ Movimentação registrada!")
+                        st.success("✅ Movimentação registrada com sucesso!")
                         st.rerun()
                     else:
-                        st.error("❌ Erro ao registrar")
+                        st.error("❌ Erro ao registrar movimentação")
 
                 st.divider()
 
@@ -352,11 +393,23 @@ with tab3:
                 tramitacoes = listar_tramitacao(processo[0])
 
                 if tramitacoes:
+                    # Criar tabela de histórico
                     for t in tramitacoes:
                         col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
 
                         with col1:
-                            st.write(f"**{t[2]}**")
+                            # Ícones por setor
+                            icones_setor = {
+                                "Requerente": "👤",
+                                "Analista": "👨‍💼",
+                                "Fiscalização": "🔍",
+                                "Parecer Externo": "📋",
+                                "Emissão de Alvará": "✅",
+                                "Protocolo": "📥",
+                                "Arquivo": "📁"
+                            }
+                            icone = icones_setor.get(t[2], "📌")
+                            st.write(f"{icone} **{t[2]}**")
 
                         with col2:
                             entrada = datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')
@@ -367,7 +420,7 @@ with tab3:
                                 saida = datetime.strptime(t[4], '%Y-%m-%d').strftime('%d/%m/%Y')
                                 st.write(f"📤 {saida}")
                             else:
-                                st.write("🔄 Em andamento")
+                                st.write("🔄 **Em andamento**")
 
                         with col4:
                             tempo = calcular_tempo(t[3], t[4])
@@ -378,162 +431,248 @@ with tab3:
 
                         st.divider()
 
-                    # Estatísticas
+                    # Estatísticas por setor
                     st.subheader("📈 Tempo por Setor")
 
                     stats = estatisticas_tramitacao(processo[0])
 
                     if stats:
-                        cols = st.columns(len(stats))
+                        # Criar colunas para as métricas
+                        num_cols = len(stats)
+                        cols = st.columns(num_cols if num_cols > 0 else 1)
+
                         for idx, (setor, dias) in enumerate(stats.items()):
-                            with cols[idx]:
+                            with cols[idx % num_cols]:
                                 st.metric(setor, f"{dias} dias")
 
                         # Tempo total
                         total_dias = sum(stats.values())
                         st.divider()
-                        st.metric("⏱️ Tempo Total do Processo", f"{total_dias} dias")
+                        st.metric("⏱️ **Tempo Total do Processo**", f"{total_dias} dias")
                 else:
-                    st.info("📭 Nenhuma movimentação registrada")
+                    st.info("📭 Nenhuma movimentação registrada para este processo")
 
 # ==================== ABA 4: ANALISAR ====================
 with tab4:
-    st.header("🤖 Analisar com IA")
+    st.header("🤖 Análise Inteligente com IA")
 
     if not api_key:
-        st.warning("⚠️ Configure API Key")
+        st.warning("⚠️ Configure sua API Key do Google Gemini na barra lateral")
+        st.info("**Como obter:** Acesse https://aistudio.google.com/app/apikey e crie uma chave gratuita")
         st.stop()
 
     procs = listar()
 
     if not procs:
-        st.info("📭 Cadastre um processo")
+        st.info("📭 Cadastre um processo primeiro na aba 'Cadastrar'")
         st.stop()
 
-    proc_sel = st.selectbox("Processo:", [f"{p[1]} - {p[3]}" for p in procs], key="anal_sel")
+    proc_sel = st.selectbox("Selecione o Processo para Análise:", 
+                           [f"{p[1]} - {p[3]}" for p in procs], 
+                           key="anal_sel")
 
     if proc_sel:
         num_proc = proc_sel.split(" - ")[0]
         dados = buscar_por_numero(num_proc)
 
         if dados:
-            with st.expander("📋 Dados", expanded=True):
+            # Mostrar dados do processo
+            with st.expander("📋 Dados do Processo", expanded=True):
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Número", dados[1])
                 col2.metric("Uso", dados[5])
                 col3.metric("Área", f"{dados[7]}m²")
 
+                st.write(f"**RT:** {dados[2]}")
+                st.write(f"**Requerente:** {dados[3]}")
+                st.write(f"**Analista:** {dados[4]}")
+                st.write(f"**Tipologia:** {dados[6]}")
+
             st.divider()
 
+            # Upload de arquivos
             col1, col2 = st.columns(2)
 
             with col1:
-                st.subheader("📐 Projeto")
-                proj = st.file_uploader("PDFs", type=['pdf'], accept_multiple_files=True, key="proj")
+                st.subheader("📐 PDFs do Projeto")
+                proj = st.file_uploader(
+                    "Anexe os PDFs do projeto arquitetônico (plantas, cortes, fachadas)", 
+                    type=['pdf'], 
+                    accept_multiple_files=True, 
+                    key="proj"
+                )
+                if proj:
+                    st.success(f"✅ {len(proj)} arquivo(s) anexado(s)")
 
             with col2:
-                st.subheader("📜 Legislação")
-                leg = st.file_uploader("PDFs", type=['pdf'], accept_multiple_files=True, key="leg")
+                st.subheader("📜 PDFs da Legislação")
+                leg = st.file_uploader(
+                    "Anexe os PDFs da legislação municipal aplicável", 
+                    type=['pdf'], 
+                    accept_multiple_files=True, 
+                    key="leg"
+                )
+                if leg:
+                    st.success(f"✅ {len(leg)} arquivo(s) anexado(s)")
 
             st.divider()
-            regras = st.text_area("📏 Regras:", height=150, placeholder="Art. 10 - Área mínima 50m²")
+
+            st.subheader("📏 Regras da Legislação a Verificar")
+            regras = st.text_area(
+                "Digite as regras específicas que devem ser verificadas (uma por linha):", 
+                height=150, 
+                placeholder="Exemplo:\nArt. 10 - Área mínima de lote: 50m²\nArt. 15 - Recuo frontal mínimo: 5m\nArt. 20 - Taxa de ocupação máxima: 60%",
+                key="regras_anal"
+            )
 
             st.divider()
 
-            if st.button("🔍 ANALISAR", type="primary"):
-                if not proj or not leg or not regras:
-                    st.error("❌ Anexe PDFs e regras!")
+            if st.button("🔍 ANALISAR PROJETO COM INTELIGÊNCIA ARTIFICIAL", type="primary", use_container_width=True):
+                if not proj:
+                    st.error("❌ Anexe pelo menos 1 PDF do projeto!")
+                elif not leg:
+                    st.error("❌ Anexe pelo menos 1 PDF da legislação!")
+                elif not regras:
+                    st.error("❌ Digite as regras que devem ser verificadas!")
                 else:
-                    with st.spinner("🤖 Analisando..."):
+                    with st.spinner("🤖 Analisando projeto com Inteligência Artificial... Aguarde..."):
                         try:
+                            # Configurar API
                             genai.configure(api_key=api_key)
 
+                            # Extrair texto dos PDFs do projeto
                             txt_proj = ""
                             for pdf in proj:
                                 reader = PyPDF2.PdfReader(pdf)
                                 for page in reader.pages:
                                     txt_proj += page.extract_text() + "\n"
 
+                            # Extrair texto dos PDFs da legislação
                             txt_leg = ""
                             for pdf in leg:
                                 reader = PyPDF2.PdfReader(pdf)
                                 for page in reader.pages:
                                     txt_leg += page.extract_text() + "\n"
 
+                            # Tentar criar modelo
                             model = None
-                            for nome in ['gemini-1.5-flash', 'gemini-pro']:
+                            for nome in ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro']:
                                 try:
                                     model = genai.GenerativeModel(nome)
-                                    st.info(f"✅ {nome}")
+                                    st.info(f"✅ Usando modelo: {nome}")
                                     break
                                 except:
                                     continue
 
                             if not model:
-                                st.error("❌ Modelo indisponível")
+                                st.error("❌ Nenhum modelo do Gemini disponível. Verifique sua API Key.")
                                 st.stop()
 
-                            prompt = f"""Analista da Prefeitura de Contagem.
+                            # Criar prompt para análise
+                            prompt = f"""Você é um analista técnico especializado em projetos arquitetônicos da Prefeitura de Contagem - MG.
 
-PROCESSO: {dados[1]}
-RT: {dados[2]}
-REQUERENTE: {dados[3]}
-USO: {dados[5]}
-ÁREA: {dados[7]}m²
+**DADOS DO PROCESSO:**
+- Número: {dados[1]}
+- RT: {dados[2]}
+- Requerente: {dados[3]}
+- Analista: {dados[4]}
+- Uso: {dados[5]}
+- Tipologia: {dados[6]}
+- Área: {dados[7]}m²
 
-LEGISLAÇÃO:
+**LEGISLAÇÃO MUNICIPAL:**
 {txt_leg[:4000]}
 
-REGRAS:
+**REGRAS ESPECÍFICAS A VERIFICAR:**
 {regras}
 
-PROJETO:
+**PROJETO ARQUITETÔNICO:**
 {txt_proj[:6000]}
 
-Analise:
+**INSTRUÇÕES:**
+Analise detalhadamente o projeto e verifique conformidade com a legislação.
+SEMPRE cite o artigo específico da lei.
+
+**FORMATO DA RESPOSTA:**
 
 ## ✅ CONFORMIDADES
+(liste o que está conforme, citando artigos)
 
 ## ❌ NÃO CONFORMIDADES
+(liste violações, citando artigos e localizando no projeto)
 
-## ⚠️ ATENÇÃO
+## ⚠️ PONTOS DE ATENÇÃO
+(itens que precisam verificação adicional)
 
 ## 🔧 RECOMENDAÇÕES
+(sugestões de correção)
 
-## 📊 PARECER
-APROVADO ou REPROVADO
+## 📊 PARECER TÉCNICO FINAL
+APROVADO ou REPROVADO (justifique citando artigos)
 """
 
+                            # Gerar análise
                             resp = model.generate_content(prompt)
 
+                            # Determinar status
                             texto = resp.text.upper()
                             if "APROVADO" in texto and "REPROVADO" not in texto:
                                 status = "APROVADO"
-                                st.success("✅ APROVADO")
+                                st.success("✅ PROJETO APROVADO")
                             elif "REPROVADO" in texto:
                                 status = "REPROVADO"
-                                st.error("❌ REPROVADO")
+                                st.error("❌ PROJETO REPROVADO")
                             else:
                                 status = "INCONCLUSIVO"
+                                st.warning("⚠️ ANÁLISE INCONCLUSIVA")
 
                             st.divider()
                             st.markdown(resp.text)
 
+                            # Salvar análise
                             salvar_analise(dados[0], resp.text, status)
 
-                            rel = f"""PREFEITURA DE CONTAGEM
-RELATÓRIO
+                            # Preparar relatório
+                            rel = f"""PREFEITURA DE CONTAGEM - MG
+RELATÓRIO DE ANÁLISE TÉCNICA
 
 Processo: {dados[1]}
+RT: {dados[2]}
+Requerente: {dados[3]}
+Analista: {dados[4]}
+Uso: {dados[5]}
+Tipologia: {dados[6]}
+Área: {dados[7]}m²
 Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}
 
+{'='*80}
+
 {resp.text}
+
+{'='*80}
+Relatório gerado por IA (Google Gemini)
+Sistema de Validação - Prefeitura de Contagem
 """
 
-                            st.download_button("📥 BAIXAR", rel, f"relatorio_{dados[1].replace('.', '_')}.txt", type="primary")
+                            st.divider()
+                            st.download_button(
+                                "📥 BAIXAR RELATÓRIO COMPLETO",
+                                rel,
+                                f"relatorio_{dados[1].replace('.', '_')}.txt",
+                                type="primary",
+                                use_container_width=True
+                            )
 
                         except Exception as e:
-                            st.error(f"❌ {str(e)}")
+                            st.error(f"❌ Erro durante a análise: {str(e)}")
 
+# Rodapé
 st.divider()
-st.markdown("🏛️ **Sistema de Validação** • Prefeitura de Contagem")
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center'>
+    <p><strong>🏛️ Sistema de Validação de Processos</strong></p>
+    <p>Prefeitura de Contagem - MG • Setor de Liberação de Alvarás</p>
+    <p style='font-size: 0.85em; color: #666;'>Powered by Google Gemini</p>
+</div>
+""", unsafe_allow_html=True)
