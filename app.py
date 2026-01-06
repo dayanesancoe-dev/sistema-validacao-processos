@@ -198,13 +198,10 @@ with tab1:
                 st.error("❌ Preencha todos os campos!")
     with col2:
         st.subheader("📋 Processos Cadastrados")
-        def listar_processos():
-    conn = sqlite3.connect('processos.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT id, numero_processo, requerente, rt, uso, area_total, estatus FROM processos')
-    processos = cursor.fetchall()  # ← ADICIONE ESTA LINHA
-    conn.close()
-    return processos
+        processos = listar_processos()
+        if processos:
+            df = pd.DataFrame(processos, columns=["ID", "Número", "Requerente", "RT", "Uso", "Área (m²)", "Status"])
+            st.dataframe(df, use_container_width=True)
         else:
             st.info("Nenhum processo cadastrado ainda.")
 # ABA 2: LEGISLAÇÕES
