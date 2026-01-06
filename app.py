@@ -16,14 +16,13 @@ st.title("🏛️ Sistema de Validação de Processos")
 st.markdown("**Prefeitura de Contagem** — Liberação de Alvarás de Construção")
 
 # Inicializar banco de dados
-import sqlite3
-
 @st.cache_resource
 def init_db():
-    conn = sqlite3.connect('database.db', check_same_thread=False)
+    conn = sqlite3.connect(':memory:')
     cursor = conn.cursor()
 
-    cursor.execute("""
+    # Criar tabelas
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS processos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             numero_processo TEXT UNIQUE NOT NULL,
@@ -36,18 +35,18 @@ def init_db():
             data_protocolo TEXT DEFAULT CURRENT_TIMESTAMP,
             data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    ''')
 
-    cursor.execute("""
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS legislacoes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT UNIQUE NOT NULL,
             descricao TEXT,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    ''')
 
-    cursor.execute("""
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS regras_legislacao (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             legislacao_id INTEGER NOT NULL,
@@ -59,14 +58,17 @@ def init_db():
             mensagem_erro TEXT,
             FOREIGN KEY (legislacao_id) REFERENCES legislacoes(id)
         )
-    """)
+    ''')
 
     conn.commit()
     return conn, cursor
 
+conn, cursor = init_db()
 
-# EXECUTA O BANCO AQUI (ANTES DE QUALQUER LISTAGEM)
-
+# Funções do sistema
+def cadastrar_processo(numero, requerente, rt, analista, uso, area):
+    try:
+        cursor.execute('''
             INSERT INTO processos (numero_processo, requerente, rt, analista, uso, area_total)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (numero, requerente, rt, analista, uso, area))
