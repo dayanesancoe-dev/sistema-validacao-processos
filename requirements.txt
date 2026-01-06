@@ -3,3 +3,4 @@ PyPDF2
 reportlab
 pandas
 openpyxl
+pip install google-generativeai PyPDF2 reportlab
