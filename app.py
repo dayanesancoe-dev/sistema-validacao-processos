@@ -10,19 +10,19 @@ st.set_page_config(page_title="Sistema de Validação", page_icon="🏛️", lay
 # ==================== BANCO DE DADOS ====================
 
 def reset_database():
-    """Reseta o banco de dados"""
+    """Reseta o banco"""
     if os.path.exists('processos.db'):
         os.remove('processos.db')
     return init_db()
 
 @st.cache_resource
 def init_db():
-    """Inicializa o banco de dados"""
+    """Inicializa banco"""
     try:
         conn = sqlite3.connect('processos.db', check_same_thread=False)
         c = conn.cursor()
 
-        # Tabela de processos
+        # Tabela processos
         c.execute('''CREATE TABLE IF NOT EXISTS processos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             numero TEXT UNIQUE NOT NULL,
@@ -35,7 +35,7 @@ def init_db():
             data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
         )''')
 
-        # Tabela de análises
+        # Tabela análises
         c.execute('''CREATE TABLE IF NOT EXISTS analises (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             processo_id INTEGER NOT NULL,
@@ -45,7 +45,7 @@ def init_db():
             FOREIGN KEY (processo_id) REFERENCES processos(id)
         )''')
 
-        # NOVA TABELA: Tramitação
+        # Tabela tramitação (NOVA)
         c.execute('''CREATE TABLE IF NOT EXISTS tramitacao (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             processo_id INTEGER NOT NULL,
@@ -59,7 +59,7 @@ def init_db():
         conn.commit()
         return conn
     except Exception as e:
-        st.error(f"Erro ao inicializar banco: {str(e)}")
+        st.error(f"Erro ao inicializar: {str(e)}")
         return None
 
 conn = init_db()
@@ -67,13 +67,12 @@ conn = init_db()
 # ==================== FUNÇÕES ====================
 
 def cadastrar(numero, rt, requerente, analista, uso, tipologia, area):
-    """Cadastra novo processo"""
+    """Cadastra processo"""
     if not conn:
         return False, "❌ Erro de conexão!"
     try:
         c = conn.cursor()
-        c.execute('''INSERT INTO processos 
-                    (numero, rt, requerente, analista, uso, tipologia, area) 
+        c.execute('''INSERT INTO processos (numero, rt, requerente, analista, uso, tipologia, area) 
                     VALUES (?, ?, ?, ?, ?, ?, ?)''',
                  (numero, rt, requerente, analista, uso, tipologia, area))
         conn.commit()
@@ -84,27 +83,25 @@ def cadastrar(numero, rt, requerente, analista, uso, tipologia, area):
         return False, f"❌ Erro: {str(e)}"
 
 def listar():
-    """Lista todos os processos"""
+    """Lista processos"""
     if not conn:
         return []
     try:
         c = conn.cursor()
         c.execute('SELECT * FROM processos ORDER BY id DESC')
         return c.fetchall()
-    except Exception as e:
-        st.error(f"Erro ao listar: {str(e)}")
+    except:
         return []
 
 def buscar_por_numero(numero):
-    """Busca processo por número"""
+    """Busca processo"""
     if not conn:
         return None
     try:
         c = conn.cursor()
         c.execute('SELECT * FROM processos WHERE numero = ?', (numero,))
         return c.fetchone()
-    except Exception as e:
-        st.error(f"Erro ao buscar: {str(e)}")
+    except:
         return None
 
 def deletar(pid):
@@ -113,13 +110,12 @@ def deletar(pid):
         return False
     try:
         c = conn.cursor()
-        c.execute('DELETE FROM tramitacao WHERE processo_id = ?', (pid,))
         c.execute('DELETE FROM analises WHERE processo_id = ?', (pid,))
+        c.execute('DELETE FROM tramitacao WHERE processo_id = ?', (pid,))
         c.execute('DELETE FROM processos WHERE id = ?', (pid,))
         conn.commit()
         return True
-    except Exception as e:
-        st.error(f"Erro ao deletar: {str(e)}")
+    except:
         return False
 
 def salvar_analise(pid, resultado, status):
@@ -132,8 +128,7 @@ def salvar_analise(pid, resultado, status):
                  (pid, resultado, status))
         conn.commit()
         return True
-    except Exception as e:
-        st.error(f"Erro ao salvar: {str(e)}")
+    except:
         return False
 
 def buscar_analises(pid):
@@ -144,29 +139,35 @@ def buscar_analises(pid):
         c = conn.cursor()
         c.execute('SELECT * FROM analises WHERE processo_id = ? ORDER BY id DESC', (pid,))
         return c.fetchall()
-    except Exception as e:
+    except:
         return []
 
-# ==================== FUNÇÕES DE TRAMITAÇÃO ====================
+# ==================== FUNÇÕES TRAMITAÇÃO (NOVAS) ====================
 
-def registrar_tramitacao(processo_id, setor, data_entrada, data_saida, observacao):
-    """Registra movimentação do processo"""
+def adicionar_tramitacao(processo_id, setor, data_entrada, observacao=""):
+    """Adiciona movimentação"""
     if not conn:
         return False
     try:
+        # Fechar tramitação anterior (se houver)
         c = conn.cursor()
-        c.execute('''INSERT INTO tramitacao 
-                    (processo_id, setor, data_entrada, data_saida, observacao) 
-                    VALUES (?, ?, ?, ?, ?)''',
-                 (processo_id, setor, data_entrada, data_saida, observacao))
+        c.execute('''UPDATE tramitacao 
+                    SET data_saida = ? 
+                    WHERE processo_id = ? AND data_saida IS NULL''',
+                 (data_entrada, processo_id))
+
+        # Adicionar nova
+        c.execute('''INSERT INTO tramitacao (processo_id, setor, data_entrada, observacao) 
+                    VALUES (?, ?, ?, ?)''',
+                 (processo_id, setor, data_entrada, observacao))
         conn.commit()
         return True
     except Exception as e:
-        st.error(f"Erro ao registrar: {str(e)}")
+        st.error(f"Erro: {str(e)}")
         return False
 
-def buscar_tramitacao(processo_id):
-    """Busca histórico de tramitação"""
+def listar_tramitacao(processo_id):
+    """Lista tramitações"""
     if not conn:
         return []
     try:
@@ -175,45 +176,37 @@ def buscar_tramitacao(processo_id):
                     WHERE processo_id = ? 
                     ORDER BY data_entrada DESC''', (processo_id,))
         return c.fetchall()
-    except Exception as e:
+    except:
         return []
 
-def calcular_tempo_setor(data_entrada, data_saida):
-    """Calcula tempo em dias entre duas datas"""
+def calcular_tempo(data_entrada, data_saida):
+    """Calcula tempo em dias"""
     try:
-        if not data_saida:
-            # Se não tem data de saída, calcula até hoje
-            data_saida = datetime.now().strftime('%Y-%m-%d')
-
         entrada = datetime.strptime(data_entrada, '%Y-%m-%d')
-        saida = datetime.strptime(data_saida, '%Y-%m-%d')
-        dias = (saida - entrada).days
-        return dias if dias >= 0 else 0
+        if data_saida:
+            saida = datetime.strptime(data_saida, '%Y-%m-%d')
+        else:
+            saida = datetime.now()
+        diff = (saida - entrada).days
+        return diff
     except:
         return 0
 
 def estatisticas_tramitacao(processo_id):
-    """Calcula estatísticas de tramitação"""
-    tramitacoes = buscar_tramitacao(processo_id)
-
+    """Estatísticas por setor"""
+    tramitacoes = listar_tramitacao(processo_id)
     if not tramitacoes:
-        return None
+        return {}
 
     stats = {}
-    total_dias = 0
-
     for t in tramitacoes:
         setor = t[2]
-        dias = calcular_tempo_setor(t[3], t[4])
-
+        tempo = calcular_tempo(t[3], t[4])
         if setor not in stats:
-            stats[setor] = {'dias': 0, 'vezes': 0}
+            stats[setor] = 0
+        stats[setor] += tempo
 
-        stats[setor]['dias'] += dias
-        stats[setor]['vezes'] += 1
-        total_dias += dias
-
-    return {'por_setor': stats, 'total_dias': total_dias}
+    return stats
 
 # ==================== INTERFACE ====================
 
@@ -234,13 +227,13 @@ with st.sidebar:
     st.metric("Processos", len(listar()))
 
     st.divider()
-    if st.button("🔄 Resetar Banco", help="Use apenas se houver erros"):
+    if st.button("🔄 Resetar Banco"):
         reset_database()
-        st.success("Banco resetado!")
+        st.success("Resetado!")
         st.rerun()
 
 # Abas
-tab1, tab2, tab3, tab4 = st.tabs(["📝 Cadastrar", "📋 Gerenciar", "📊 Tramitação", "🤖 Analisar"])
+tab1, tab2, tab3, tab4 = st.tabs(["📝 Cadastrar", "📋 Gerenciar", "🔄 Tramitação", "🤖 Analisar"])
 
 # ==================== ABA 1: CADASTRAR ====================
 with tab1:
@@ -265,6 +258,10 @@ with tab1:
                 ok, msg = cadastrar(num, rt, req, ana, uso, tip, area)
                 if ok:
                     st.success(msg)
+                    # Adicionar primeira tramitação
+                    processo = buscar_por_numero(num)
+                    if processo:
+                        adicionar_tramitacao(processo[0], "Protocolo", datetime.now().strftime('%Y-%m-%d'), "Cadastro inicial")
                     st.balloons()
                 else:
                     st.error(msg)
@@ -294,118 +291,110 @@ with tab2:
                         icone = "✅" if a[3] == "APROVADO" else "❌"
                         st.write(f"{icone} {a[4]}")
 
-                if st.button("🗑️ Deletar", key=f"del_{p[0]}"):
+                if st.button("🗑️", key=f"del_{p[0]}"):
                     if deletar(p[0]):
-                        st.success("✅ Deletado!")
+                        st.success("Deletado!")
                         st.rerun()
 
-# ==================== ABA 3: TRAMITAÇÃO ====================
+# ==================== ABA 3: TRAMITAÇÃO (NOVA) ====================
 with tab3:
-    st.header("📊 Gestão de Tramitação")
+    st.header("🔄 Gestão de Tramitação")
 
     procs = listar()
 
     if not procs:
         st.info("📭 Cadastre um processo primeiro")
     else:
-        # Seleção do processo
-        proc_sel = st.selectbox("Selecione o Processo:", 
-                               [f"{p[1]} - {p[3]}" for p in procs],
-                               key="tram_proc_sel")
+        proc_sel = st.selectbox("Selecione o Processo:", [f"{p[1]} - {p[3]}" for p in procs], key="tram_sel")
 
         if proc_sel:
             num_proc = proc_sel.split(" - ")[0]
-            dados = buscar_por_numero(num_proc)
+            processo = buscar_por_numero(num_proc)
 
-            if dados:
+            if processo:
                 st.divider()
 
-                # Formulário para registrar movimentação
+                # Adicionar nova movimentação
                 st.subheader("➕ Registrar Movimentação")
 
-                with st.form("form_tramitacao"):
-                    col1, col2, col3 = st.columns(3)
+                col1, col2, col3 = st.columns(3)
 
-                    with col1:
-                        setor = st.selectbox("Setor *", [
-                            "Requerente",
-                            "Analista",
-                            "Fiscalização",
-                            "Parecer Externo",
-                            "Emissão de Alvará"
-                        ])
+                with col1:
+                    setor_opcoes = [
+                        "Requerente",
+                        "Analista",
+                        "Fiscalização",
+                        "Parecer Externo",
+                        "Emissão de Alvará",
+                        "Protocolo",
+                        "Arquivo"
+                    ]
+                    setor = st.selectbox("Setor:", setor_opcoes, key="tram_setor")
 
-                    with col2:
-                        data_entrada = st.date_input("Data Entrada *")
+                with col2:
+                    data_mov = st.date_input("Data:", key="tram_data")
 
-                    with col3:
-                        data_saida = st.date_input("Data Saída", value=None)
+                with col3:
+                    obs = st.text_input("Observação:", key="tram_obs")
 
-                    obs = st.text_area("Observação", placeholder="Ex: Retornou para correções")
-
-                    if st.form_submit_button("✅ Registrar", type="primary"):
-                        data_saida_str = data_saida.strftime('%Y-%m-%d') if data_saida else None
-
-                        if registrar_tramitacao(
-                            dados[0], 
-                            setor, 
-                            data_entrada.strftime('%Y-%m-%d'), 
-                            data_saida_str,
-                            obs
-                        ):
-                            st.success("✅ Movimentação registrada!")
-                            st.rerun()
-                        else:
-                            st.error("❌ Erro ao registrar")
+                if st.button("✅ Registrar Movimentação", type="primary"):
+                    if adicionar_tramitacao(processo[0], setor, data_mov.strftime('%Y-%m-%d'), obs):
+                        st.success("✅ Movimentação registrada!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Erro ao registrar")
 
                 st.divider()
 
-                # Histórico de tramitação
-                st.subheader("📜 Histórico de Tramitação")
+                # Histórico
+                st.subheader("📊 Histórico de Tramitação")
 
-                tramitacoes = buscar_tramitacao(dados[0])
+                tramitacoes = listar_tramitacao(processo[0])
 
-                if not tramitacoes:
-                    st.info("📭 Nenhuma movimentação registrada")
-                else:
+                if tramitacoes:
+                    for t in tramitacoes:
+                        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+
+                        with col1:
+                            st.write(f"**{t[2]}**")
+
+                        with col2:
+                            entrada = datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')
+                            st.write(f"📥 {entrada}")
+
+                        with col3:
+                            if t[4]:
+                                saida = datetime.strptime(t[4], '%Y-%m-%d').strftime('%d/%m/%Y')
+                                st.write(f"📤 {saida}")
+                            else:
+                                st.write("🔄 Em andamento")
+
+                        with col4:
+                            tempo = calcular_tempo(t[3], t[4])
+                            st.metric("Dias", tempo)
+
+                        if t[5]:
+                            st.caption(f"💬 {t[5]}")
+
+                        st.divider()
+
                     # Estatísticas
-                    stats = estatisticas_tramitacao(dados[0])
+                    st.subheader("📈 Tempo por Setor")
+
+                    stats = estatisticas_tramitacao(processo[0])
 
                     if stats:
-                        st.markdown("### 📊 Estatísticas")
+                        cols = st.columns(len(stats))
+                        for idx, (setor, dias) in enumerate(stats.items()):
+                            with cols[idx]:
+                                st.metric(setor, f"{dias} dias")
 
-                        cols = st.columns(len(stats['por_setor']) + 1)
-
-                        for idx, (setor, dados_setor) in enumerate(stats['por_setor'].items()):
-                            cols[idx].metric(
-                                setor,
-                                f"{dados_setor['dias']} dias",
-                                f"{dados_setor['vezes']}x"
-                            )
-
-                        cols[-1].metric("TOTAL", f"{stats['total_dias']} dias")
-
+                        # Tempo total
+                        total_dias = sum(stats.values())
                         st.divider()
-
-                    # Tabela de movimentações
-                    st.markdown("### 📋 Detalhamento")
-
-                    for t in tramitacoes:
-                        dias = calcular_tempo_setor(t[3], t[4])
-
-                        col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
-
-                        col1.write(f"**{t[2]}**")
-                        col2.write(f"📥 {datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')}")
-
-                        if t[4]:
-                            col3.write(f"📤 {datetime.strptime(t[4], '%Y-%m-%d').strftime('%d/%m/%Y')}")
-                        else:
-                            col3.write("📤 Em andamento")
-
-                        col4.write(f"⏱️ **{dias} dias** {f'- {t[5]}' if t[5] else ''}")
-
-                        st.divider()
+                        st.metric("⏱️ Tempo Total do Processo", f"{total_dias} dias")
+                else:
+                    st.info("📭 Nenhuma movimentação registrada")
 
 # ==================== ABA 4: ANALISAR ====================
 with tab4:
