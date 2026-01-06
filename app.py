@@ -262,16 +262,19 @@ with tab1:
                 "Misto",
                 "Sem destinação específica"
             ])
+
             tip = st.selectbox("Tipologia *", [
                 "",
-                "Casa",
-                "Sobrado",
-                "Edifício",
-                "Galpão",
-                "Loja",
-                "Sala Comercial",
-                "Outro"
+                "Aprovação Inicial",
+                "Levantamento Existente",
+                "Modificação de Projeto",
+                "Regularização",
+                "Misto",
+                "RIU",
+                "ERB",
+                "As Built"
             ])
+
             area = st.number_input("Área Construída (m²) *", min_value=0.0, step=0.01, format="%.2f")
 
         st.markdown("*Campos obrigatórios")
