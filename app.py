@@ -17,8 +17,8 @@ def reset_database():
         if os.path.exists('processos.db'):
             os.remove('processos.db')
         st.cache_resource.clear() # Limpa o cache para forçar a recriação da conexão
-        st.success("✅ Banco de dados resetado com sucesso! Recarregue a página.")
-        st.stop() # Para a execução para que o usuário possa recarregar
+        st.success("✅ Banco de dados resetado com sucesso!")
+        return init_db()
     except Exception as e:
         st.error(f"❌ Erro ao resetar o banco de dados: {str(e)}")
         return None
@@ -117,9 +117,9 @@ def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_proto
         conn.commit()
         return True, "✅ Processo cadastrado com sucesso!"
     except sqlite3.IntegrityError:
-        return False, "❌ Erro: Já existe um processo com este número!"
+        return False, "❌ Processo com este número já existe!"
     except Exception as e:
-        return False, f"❌ Erro ao cadastrar processo: {str(e)}"
+        return False, f"❌ Erro ao cadastrar: {str(e)}"
 
 def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
     """Atualiza os dados de um processo existente."""
@@ -133,7 +133,7 @@ def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_
         conn.commit()
         return True, "✅ Processo atualizado com sucesso!"
     except Exception as e:
-        return False, f"❌ Erro ao atualizar processo: {str(e)}"
+        return False, f"❌ Erro ao atualizar: {str(e)}"
 
 def atualizar_status(pid, novo_status):
     """Atualiza o status de um processo."""
@@ -144,29 +144,29 @@ def atualizar_status(pid, novo_status):
         conn.commit()
         return True
     except Exception as e:
-        st.error(f"Erro ao atualizar status: {e}")
+        st.error(f"❌ Erro ao atualizar status: {str(e)}")
         return False
 
 def listar():
-    """Lista todos os processos."""
+    """Lista todos os processos ordenados pelo ID mais recente."""
     if not conn: return []
     try:
         c = conn.cursor()
         c.execute('SELECT * FROM processos ORDER BY id DESC')
         return c.fetchall()
     except Exception as e:
-        st.error(f"Erro ao listar processos: {e}")
+        st.error(f"❌ Erro ao listar processos: {str(e)}")
         return []
 
 def listar_por_status(status):
-    """Lista processos por um status específico."""
+    """Lista processos filtrados por status."""
     if not conn: return []
     try:
         c = conn.cursor()
         c.execute('SELECT * FROM processos WHERE status = ? ORDER BY id DESC', (status,))
         return c.fetchall()
     except Exception as e:
-        st.error(f"Erro ao listar processos por status: {e}")
+        st.error(f"❌ Erro ao listar por status: {str(e)}")
         return []
 
 def buscar_por_numero(numero):
@@ -177,7 +177,7 @@ def buscar_por_numero(numero):
         c.execute('SELECT * FROM processos WHERE numero = ?', (numero,))
         return c.fetchone()
     except Exception as e:
-        st.error(f"Erro ao buscar processo por número: {e}")
+        st.error(f"❌ Erro ao buscar processo: {str(e)}")
         return None
 
 def deletar(pid):
@@ -191,11 +191,11 @@ def deletar(pid):
         conn.commit()
         return True
     except Exception as e:
-        st.error(f"Erro ao deletar processo: {e}")
+        st.error(f"❌ Erro ao deletar processo: {str(e)}")
         return False
 
 def salvar_analise(pid, resultado, status):
-    """Salva o resultado de uma análise no banco de dados."""
+    """Salva o resultado de uma análise de IA."""
     if not conn: return False
     try:
         c = conn.cursor()
@@ -204,43 +204,42 @@ def salvar_analise(pid, resultado, status):
         conn.commit()
         return True
     except Exception as e:
-        st.error(f"Erro ao salvar análise: {e}")
+        st.error(f"❌ Erro ao salvar análise: {str(e)}")
         return False
 
 def buscar_analises(pid):
-    """Busca todas as análises de um processo."""
+    """Busca as análises de um processo."""
     if not conn: return []
     try:
         c = conn.cursor()
         c.execute('SELECT * FROM analises WHERE processo_id = ? ORDER BY id DESC', (pid,))
         return c.fetchall()
     except Exception as e:
-        st.error(f"Erro ao buscar análises: {e}")
+        st.error(f"❌ Erro ao buscar análises: {str(e)}")
         return []
 
 def adicionar_tramitacao(processo_id, setor, data_entrada, observacao=""):
-    """Adiciona uma nova movimentação de tramitação para um processo."""
+    """Adiciona uma nova movimentação de tramitação."""
     if not conn: return False
     try:
         c = conn.cursor()
-        # Primeiro, fechar a tramitação anterior se houver uma aberta
+        # Fecha a tramitação anterior (se houver alguma em aberto)
         c.execute('''UPDATE tramitacao 
                     SET data_saida = ? 
                     WHERE processo_id = ? AND data_saida IS NULL''', 
                  (data_entrada, processo_id))
 
-        # Adicionar a nova tramitação
-        c.execute('''INSERT INTO tramitacao 
-                    (processo_id, setor, data_entrada, observacao) 
-                    VALUES (?, ?, ?, ?)''',
+        # Adiciona a nova tramitação
+        c.execute('''INSERT INTO tramitacao (processo_id, setor, data_entrada, observacao) 
+                    VALUES (?, ?, ?, ?)''', 
                  (processo_id, setor, data_entrada, observacao))
         conn.commit()
         return True
     except Exception as e:
-        st.error(f"Erro ao adicionar tramitação: {e}")
+        st.error(f"❌ Erro ao registrar tramitação: {str(e)}")
         return False
 
-def atualizar_tramitacao(tid, setor, data_entrada, data_saida, observacao):
+def atualizar_tramitacao(tram_id, setor, data_entrada, data_saida, observacao):
     """Atualiza uma movimentação de tramitação existente."""
     if not conn: return False
     try:
@@ -248,400 +247,477 @@ def atualizar_tramitacao(tid, setor, data_entrada, data_saida, observacao):
         c.execute('''UPDATE tramitacao 
                     SET setor=?, data_entrada=?, data_saida=?, observacao=?
                     WHERE id=?''',
-                 (setor, data_entrada, data_saida, observacao, tid))
+                 (setor, data_entrada, data_saida, observacao, tram_id))
         conn.commit()
         return True
     except Exception as e:
-        st.error(f"Erro ao atualizar tramitação: {e}")
+        st.error(f"❌ Erro ao atualizar tramitação: {str(e)}")
         return False
 
-def deletar_tramitacao(tid):
+def deletar_tramitacao(tram_id):
     """Deleta uma movimentação de tramitação."""
     if not conn: return False
     try:
         c = conn.cursor()
-        c.execute('DELETE FROM tramitacao WHERE id = ?', (tid,))
+        c.execute('DELETE FROM tramitacao WHERE id = ?', (tram_id,))
         conn.commit()
         return True
     except Exception as e:
-        st.error(f"Erro ao deletar tramitação: {e}")
+        st.error(f"❌ Erro ao deletar tramitação: {str(e)}")
         return False
 
 def buscar_tramitacoes(processo_id):
-    """Busca todas as tramitações de um processo."""
+    """Busca o histórico de tramitações de um processo."""
     if not conn: return []
     try:
         c = conn.cursor()
-        c.execute('SELECT * FROM tramitacao WHERE processo_id = ? ORDER BY data_entrada ASC', (processo_id,))
+        c.execute('SELECT * FROM tramitacao WHERE processo_id = ? ORDER BY data_entrada DESC', 
+                 (processo_id,))
         return c.fetchall()
     except Exception as e:
-        st.error(f"Erro ao buscar tramitações: {e}")
+        st.error(f"❌ Erro ao buscar tramitações: {str(e)}")
         return []
 
-def calcular_tempo_setores(tramitacoes):
-    """Calcula o tempo em dias que o processo ficou em cada setor."""
-    tempos_setores = {}
-    for i, t in enumerate(tramitacoes):
+def calcular_dias(data_entrada_str, data_saida_str):
+    """Calcula a diferença em dias entre duas datas (ou até hoje se data_saida_str for None)."""
+    try:
+        entrada = datetime.strptime(data_entrada_str, "%Y-%m-%d")
+        saida = datetime.strptime(data_saida_str, "%Y-%m-%d") if data_saida_str else datetime.now()
+        return (saida - entrada).days
+    except Exception as e:
+        # st.warning(f"Erro ao calcular dias: {e} para entrada={data_entrada_str}, saida={data_saida_str}")
+        return 0 # Retorna 0 ou outro valor padrão em caso de erro
+
+def estatisticas_tramitacao(processo_id):
+    """Calcula o tempo total em dias que o processo ficou em cada setor."""
+    trams = buscar_tramitacoes(processo_id)
+    stats = {}
+    for t in trams:
         setor = t[2]
-        data_entrada_str = t[3]
-        data_saida_str = t[4]
-
-        data_entrada = datetime.strptime(data_entrada_str, '%Y-%m-%d %H:%M:%S')
-
-        if data_saida_str:
-            data_saida = datetime.strptime(data_saida_str, '%Y-%m-%d %H:%M:%S')
+        dias = calcular_dias(t[3], t[4])
+        if setor in stats:
+            stats[setor] += dias
         else:
-            # Se for a última tramitação e não tem data de saída, usa a data atual
-            if i == len(tramitacoes) - 1:
-                data_saida = datetime.now()
-            else:
-                data_saida = data_entrada # Ou outra lógica, dependendo do que significa 'sem data de saída'
-
-        duracao = (data_saida - data_entrada).days
-        tempos_setores[setor] = tempos_setores.get(setor, 0) + duracao
-    return tempos_setores
-
-# Funções para carregar dados em DataFrames para gráficos
-def get_processos_df():
-    """Carrega todos os processos em um DataFrame do pandas."""
-    if not conn: return pd.DataFrame()
-    try:
-        df = pd.read_sql_query("SELECT * FROM processos", conn)
-        df['data_protocolo'] = pd.to_datetime(df['data_protocolo'])
-        df['data_cadastro'] = pd.to_datetime(df['data_cadastro'])
-        return df
-    except Exception as e:
-        st.error(f"Erro ao carregar processos para DataFrame: {e}")
-        return pd.DataFrame()
-
-def get_tramitacoes_df():
-    """Carrega todas as tramitações em um DataFrame do pandas e calcula a duração."""
-    if not conn: return pd.DataFrame()
-    try:
-        df = pd.read_sql_query("SELECT * FROM tramitacao", conn)
-        df['data_entrada'] = pd.to_datetime(df['data_entrada'])
-        df['data_saida'] = pd.to_datetime(df['data_saida'])
-        df['duracao_dias'] = (df['data_saida'] - df['data_entrada']).dt.days.fillna(0) # Duração em dias
-        return df
-    except Exception as e:
-        st.error(f"Erro ao carregar tramitações para DataFrame: {e}")
-        return pd.DataFrame()
+            stats[setor] = dias
+    return stats
 
 # ==================== SIDEBAR ====================
 with st.sidebar:
     st.title("⚙️ Configurações")
-    api_key = st.text_input("API Key Google Gemini:", type="password", 
-                            help="Cole sua API Key do Google Gemini aqui. Obtenha em https://aistudio.google.com/app/apikey")
-    if api_key:
-        st.session_state['api_key'] = api_key
-        st.success("API Key configurada!")
-    else:
-        st.session_state['api_key'] = None
-        st.warning("API Key não configurada.")
+
+    # Armazena a API Key na session_state para ser acessível em todas as abas
+    st.session_state['api_key'] = st.text_input("🔑 API Key Gemini:", type="password", help="Obtenha sua chave em: https://aistudio.google.com/app/apikey")
 
     st.divider()
-    if st.button("🔄 Resetar Banco de Dados", help="Apaga todos os dados e recria as tabelas. Use com cautela!"):
+
+    # Botão de reset do banco de dados
+    if st.button("🔄 Resetar Banco de Dados", type="secondary", help="ATENÇÃO: Isso apagará TODOS os dados existentes e recriará as tabelas com a estrutura mais recente."):
         reset_database()
+        st.rerun()
+
+    st.divider()
+
+    # Métricas gerais
+    procs_geral = listar()
+    st.metric("📊 Total de Processos", len(procs_geral))
+
+    if procs_geral:
+        usos = {}
+        for p in procs_geral:
+            uso = p[5]
+            usos[uso] = usos.get(uso, 0) + 1
+
+        st.divider()
+        st.subheader("📈 Processos por Uso")
+        for uso, qtd in usos.items():
+            st.metric(uso, qtd)
 
 # ==================== ABAS PRINCIPAIS ====================
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "➕ Cadastrar", "📋 Gerenciar", "➡️ Tramitação", "📊 Kanban", "🤖 Analisar", "📈 Dashboard & Relatórios"
-])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Cadastrar", "📋 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 Analisar", "📈 Gráficos"])
 
 # ==================== ABA 1: CADASTRAR ====================
 with tab1:
     st.header("➕ Cadastrar Novo Processo")
 
-    with st.form("cadastro_processo"):
-        numero = st.text_input("Número do Processo:", placeholder="Ex: 12345/2023", key="cad_numero")
-        rt = st.text_input("RT (Responsável Técnico):", placeholder="Ex: Arq. João Silva - CAU A123456", key="cad_rt")
-        requerente = st.text_input("Requerente:", placeholder="Ex: Maria Oliveira", key="cad_requerente")
-        analista = st.text_input("Analista Responsável:", placeholder="Ex: Ana Paula", key="cad_analista")
-
+    with st.form("form_cadastro", clear_on_submit=True):
         col1, col2 = st.columns(2)
+
         with col1:
-            uso = st.selectbox("Uso:", 
-                               ['Unifamiliar', 'Multifamiliar', 'Serviços', 'Comércio Varejista', 
-                                'Comércio Atacadista', 'Indústria', 'Misto', 'Sem destinação específica'], 
-                               key="cad_uso")
+            numero = st.text_input("📄 Número do Processo *", placeholder="Ex: 2024.001.123")
+            rt = st.text_input("👷 Responsável Técnico *", placeholder="Nome do RT")
+            requerente = st.text_input("🏢 Requerente *", placeholder="Nome do requerente")
+            analista = st.text_input("👤 Analista *", placeholder="Nome do analista")
+
         with col2:
-            tipologia = st.selectbox("Tipologia:", 
-                                     ['Aprovação Inicial', 'Levantamento Existente', 'Modificação de Projeto', 
-                                      'Regularização', 'Misto', 'RIU', 'ERB', 'As Built'], 
-                                     key="cad_tipologia")
+            uso = st.selectbox("🏗️ Uso *", [
+                "", # Opção vazia para forçar seleção
+                "Unifamiliar",
+                "Multifamiliar",
+                "Serviços",
+                "Comércio Varejista",
+                "Comércio Atacadista",
+                "Indústria",
+                "Misto",
+                "Sem destinação específica"
+            ])
 
-        area = st.number_input("Área (m²):", min_value=0.0, format="%.2f", key="cad_area")
-        data_protocolo = st.date_input("Data do Protocolo:", value="today", key="cad_data_protocolo")
+            tipologia = st.selectbox("📐 Tipologia *", [
+                "", # Opção vazia para forçar seleção
+                "Aprovação Inicial",
+                "Levantamento Existente",
+                "Modificação de Projeto",
+                "Regularização",
+                "Misto",
+                "RIU",
+                "ERB",
+                "As Built"
+            ])
 
-        submitted = st.form_submit_button("✅ Cadastrar Processo", type="primary")
+            area = st.number_input("📏 Área Construída (m²) *", min_value=0.0, step=0.01, format="%.2f")
+            data_protocolo = st.date_input("📅 Data do Protocolo *", value=datetime.now().date())
+
+        st.markdown("*Campos obrigatórios")
+
+        submitted = st.form_submit_button("💾 CADASTRAR PROCESSO", type="primary", use_container_width=True)
+
         if submitted:
-            if numero and rt and requerente and analista and uso and tipologia and area is not None and data_protocolo:
-                data_protocolo_str = data_protocolo.strftime('%Y-%m-%d')
-                success, msg = cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo_str)
-                if success:
+            if not all([numero, rt, requerente, analista, uso, tipologia, area > 0, data_protocolo]):
+                st.error("❌ Por favor, preencha todos os campos obrigatórios!")
+            else:
+                sucesso, msg = cadastrar(numero, rt, requerente, analista, uso, tipologia, area, 
+                                        data_protocolo.strftime('%Y-%m-%d'))
+                if sucesso:
                     st.success(msg)
-                    # Adiciona a primeira tramitação automaticamente
-                    adicionar_tramitacao(buscar_por_numero(numero)[0], "Protocolo", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-                    st.info("Primeira tramitação (Protocolo) registrada automaticamente.")
+                    st.balloons()
                 else:
                     st.error(msg)
-            else:
-                st.error("❌ Preencha todos os campos!")
 
 # ==================== ABA 2: GERENCIAR ====================
 with tab2:
-    st.header("📋 Gerenciar Processos Existentes")
+    st.header("📋 Gerenciar Processos")
 
     procs = listar()
 
     if not procs:
-        st.info("📭 Nenhum processo cadastrado ainda.")
+        st.info("📭 Nenhum processo cadastrado ainda. Use a aba 'Cadastrar' para adicionar.")
     else:
+        st.write(f"**Mostrando {len(procs)} processo(s)**")
+        st.divider()
+
         for p in procs:
             # p[0]=id, p[1]=numero, p[2]=rt, p[3]=requerente, p[4]=analista, p[5]=uso, p[6]=tipologia, p[7]=area, p[8]=data_protocolo, p[9]=status, p[10]=data_cadastro
 
-            with st.expander(f"📄 **{p[1]}** - {p[3]} ({p[9]})"):
-                st.write(f"**RT:** {p[2]}")
-                st.write(f"**Requerente:** {p[3]}")
-                st.write(f"**Analista:** {p[4]}")
-                st.write(f"**Uso:** {p[5]} | **Tipologia:** {p[6]}")
-                st.write(f"**Área:** {p[7]}m²")
-                st.write(f"**Data Protocolo:** {datetime.strptime(p[8], '%Y-%m-%d').strftime('%d/%m/%Y')}")
-                st.markdown(f"**Cadastrado em:** {datetime.strptime(p[10], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
+            with st.expander(f"📄 Processo {p[1]} - {p[3]} | Status: {p[9]}", expanded=False):
 
-                st.divider()
+                # Inicializa o estado de edição para cada processo
+                if f"edit_proc_{p[0]}" not in st.session_state:
+                    st.session_state[f"edit_proc_{p[0]}"] = False
 
-                # Botões de Ação
-                col_edit, col_del = st.columns(2)
-                with col_edit:
-                    if st.button("✏️ Editar Cadastro", key=f"edit_proc_{p[0]}", use_container_width=True):
-                        st.session_state[f"edit_proc_form_{p[0]}"] = True
-                with col_del:
-                    if st.button("🗑️ Deletar Processo", key=f"del_proc_{p[0]}", use_container_width=True, type="secondary"):
-                        if deletar(p[0]):
-                            st.success(f"✅ Processo {p[1]} deletado!")
+                # Se não estiver em modo de edição, mostra a visualização normal
+                if not st.session_state[f"edit_proc_{p[0]}"]:
+                    col_info, col_btns = st.columns([4, 1])
+
+                    with col_info:
+                        st.markdown(f"**Número:** {p[1]}")
+                        st.markdown(f"**RT:** {p[2]}")
+                        st.markdown(f"**Requerente:** {p[3]}")
+                        st.markdown(f"**Analista:** {p[4]}")
+                        st.markdown(f"**Uso:** {p[5]} | **Tipologia:** {p[6]}")
+                        st.markdown(f"**Área:** {p[7]}m²")
+                        st.markdown(f"**Data Protocolo:** {datetime.strptime(p[8], '%Y-%m-%d').strftime('%d/%m/%Y')}")
+                        st.markdown(f"**Status Atual:** **{p[9]}**")
+                        st.markdown(f"**Cadastrado em:** {datetime.strptime(p[10], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
+
+                        # Análises
+                        analises = buscar_analises(p[0])
+                        if analises:
+                            st.divider()
+                            st.markdown("**📊 Histórico de Análises:**")
+                            for a in analises:
+                                icone = "✅" if a[3] == "APROVADO" else "❌" if a[3] == "REPROVADO" else "⚠️"
+                                with st.expander(f"{icone} {a[4]} - **{a[3]}**", expanded=False):
+                                    st.markdown(a[2])
+
+                    with col_btns:
+                        if st.button("✏️", key=f"btn_edit_proc_{p[0]}", help="Editar processo"):
+                            st.session_state[f"edit_proc_{p[0]}"] = True
                             st.rerun()
-                        else:
-                            st.error(f"❌ Erro ao deletar processo {p[1]}.")
 
-                # Formulário de Edição (aparece ao clicar em Editar)
-                if st.session_state.get(f"edit_proc_form_{p[0]}", False):
-                    st.subheader(f"Editar Processo {p[1]}")
+                        if st.button("🗑️", key=f"btn_del_proc_{p[0]}", help="Deletar processo"):
+                            if deletar(p[0]):
+                                st.success("✅ Processo deletado!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Erro ao deletar")
+
+                # Se estiver em modo de edição, mostra o formulário de edição
+                else:
+                    st.subheader("✏️ Editar Processo")
+
                     with st.form(f"form_edit_proc_{p[0]}"):
-                        ed_numero = st.text_input("Número do Processo:", value=p[1], key=f"ed_numero_{p[0]}")
-                        ed_rt = st.text_input("RT:", value=p[2], key=f"ed_rt_{p[0]}")
-                        ed_requerente = st.text_input("Requerente:", value=p[3], key=f"ed_requerente_{p[0]}")
-                        ed_analista = st.text_input("Analista:", value=p[4], key=f"ed_analista_{p[0]}")
+                        col1, col2 = st.columns(2)
 
-                        col_ed1, col_ed2 = st.columns(2)
-                        with col_ed1:
-                            ed_uso = st.selectbox("Uso:", 
-                                                  ['Unifamiliar', 'Multifamiliar', 'Serviços', 'Comércio Varejista', 
-                                                   'Comércio Atacadista', 'Indústria', 'Misto', 'Sem destinação específica'], 
-                                                  index=['Unifamiliar', 'Multifamiliar', 'Serviços', 'Comércio Varejista', 
-                                                         'Comércio Atacadista', 'Indústria', 'Misto', 'Sem destinação específica'].index(p[5]), 
-                                                  key=f"ed_uso_{p[0]}")
-                        with col_ed2:
-                            ed_tipologia = st.selectbox("Tipologia:", 
-                                                        ['Aprovação Inicial', 'Levantamento Existente', 'Modificação de Projeto', 
-                                                         'Regularização', 'Misto', 'RIU', 'ERB', 'As Built'], 
-                                                        index=['Aprovação Inicial', 'Levantamento Existente', 'Modificação de Projeto', 
-                                                               'Regularização', 'Misto', 'RIU', 'ERB', 'As Built'].index(p[6]), 
-                                                        key=f"ed_tipologia_{p[0]}")
+                        with col1:
+                            ed_numero = st.text_input("Número", value=p[1], key=f"ed_num_{p[0]}")
+                            ed_rt = st.text_input("RT", value=p[2], key=f"ed_rt_{p[0]}")
+                            ed_req = st.text_input("Requerente", value=p[3], key=f"ed_req_{p[0]}")
+                            ed_ana = st.text_input("Analista", value=p[4], key=f"ed_ana_{p[0]}")
 
-                        ed_area = st.number_input("Área (m²):", value=float(p[7]), min_value=0.0, format="%.2f", key=f"ed_area_{p[0]}")
-                        ed_data_protocolo = st.date_input("Data do Protocolo:", value=datetime.strptime(p[8], '%Y-%m-%d').date(), key=f"ed_data_protocolo_{p[0]}")
+                        with col2:
+                            ed_uso = st.selectbox("Uso", [
+                                "Unifamiliar", "Multifamiliar", "Serviços",
+                                "Comércio Varejista", "Comércio Atacadista",
+                                "Indústria", "Misto", "Sem destinação específica"
+                            ], index=["Unifamiliar", "Multifamiliar", "Serviços",
+                                     "Comércio Varejista", "Comércio Atacadista",
+                                     "Indústria", "Misto", "Sem destinação específica"].index(p[5]), 
+                            key=f"ed_uso_{p[0]}")
 
-                        col_ed_btn1, col_ed_btn2 = st.columns(2)
-                        with col_ed_btn1:
-                            if st.form_submit_button("💾 Salvar Edição", type="primary", key=f"save_edit_proc_{p[0]}"):
-                                ed_data_protocolo_str = ed_data_protocolo.strftime('%Y-%m-%d')
-                                success, msg = atualizar(p[0], ed_numero, ed_rt, ed_requerente, ed_analista, ed_uso, ed_tipologia, ed_area, ed_data_protocolo_str)
-                                if success:
+                            ed_tip = st.selectbox("Tipologia", [
+                                "Aprovação Inicial", "Levantamento Existente",
+                                "Modificação de Projeto", "Regularização",
+                                "Misto", "RIU", "ERB", "As Built"
+                            ], index=["Aprovação Inicial", "Levantamento Existente",
+                                     "Modificação de Projeto", "Regularização",
+                                     "Misto", "RIU", "ERB", "As Built"].index(p[6]),
+                            key=f"ed_tip_{p[0]}")
+
+                            ed_area = st.number_input("Área", value=float(p[7]), step=0.01, key=f"ed_area_{p[0]}")
+                            ed_data_protocolo = st.date_input("Data Protocolo", 
+                                                   value=datetime.strptime(p[8], '%Y-%m-%d').date(),
+                                                   key=f"ed_data_prot_{p[0]}")
+
+                        col_save, col_cancel = st.columns(2)
+
+                        with col_save:
+                            if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
+                                sucesso, msg = atualizar(p[0], ed_numero, ed_rt, ed_req, ed_ana, 
+                                                        ed_uso, ed_tip, ed_area, ed_data_protocolo.strftime('%Y-%m-%d'))
+                                if sucesso:
                                     st.success(msg)
-                                    st.session_state[f"edit_proc_form_{p[0]}"] = False # Fecha o formulário
+                                    st.session_state[f"edit_proc_{p[0]}"] = False
                                     st.rerun()
                                 else:
                                     st.error(msg)
-                        with col_ed_btn2:
-                            if st.form_submit_button("↩️ Cancelar", key=f"cancel_edit_proc_{p[0]}"):
-                                st.session_state[f"edit_proc_form_{p[0]}"] = False # Fecha o formulário
+
+                        with col_cancel:
+                            if st.form_submit_button("❌ Cancelar Edição", use_container_width=True):
+                                st.session_state[f"edit_proc_{p[0]}"] = False
                                 st.rerun()
 
 # ==================== ABA 3: TRAMITAÇÃO ====================
 with tab3:
-    st.header("➡️ Gerenciar Tramitação de Processos")
+    st.header("🔄 Gestão de Tramitação")
 
-    procs_tram = listar()
-    if not procs_tram:
-        st.info("📭 Nenhum processo para tramitar. Cadastre um primeiro.")
-        st.stop()
+    procs = listar()
 
-    proc_sel_tram = st.selectbox("Selecione o Processo:", 
-                                 [f"{p[1]} - {p[3]}" for p in procs_tram], 
-                                 key="sel_proc_tram")
+    if not procs:
+        st.info("📭 Cadastre um processo primeiro na aba 'Cadastrar'")
+    else:
+        # Seleção do processo
+        proc_sel = st.selectbox("Selecione o Processo:", 
+                               [f"{p[1]} - {p[3]}" for p in procs], 
+                               key="tram_sel")
 
-    if proc_sel_tram:
-        num_proc_tram = proc_sel_tram.split(" - ")[0]
-        dados_tram = buscar_por_numero(num_proc_tram)
+        if proc_sel:
+            num_proc = proc_sel.split(" - ")[0]
+            processo = buscar_por_numero(num_proc)
 
-        if dados_tram:
-            st.subheader(f"Movimentações do Processo: {dados_tram[1]}")
-
-            # Formulário para adicionar nova tramitação
-            with st.form(f"add_tramitacao_form_{dados_tram[0]}"):
-                st.write("Adicionar Nova Movimentação:")
-                setores_disponiveis = ['Protocolo', 'Requerente', 'Analista', 'Fiscalização', 
-                                       'Parecer Externo', 'Emissão de Alvará', 'Arquivo']
-                novo_setor = st.selectbox("Setor:", setores_disponiveis, key=f"novo_setor_{dados_tram[0]}")
-                data_entrada_nova = st.date_input("Data de Entrada:", value="today", key=f"data_entrada_nova_{dados_tram[0]}")
-                hora_entrada_nova = st.time_input("Hora de Entrada:", value=datetime.now().time(), key=f"hora_entrada_nova_{dados_tram[0]}")
-                observacao_nova = st.text_area("Observação:", key=f"obs_nova_{dados_tram[0]}")
-
-                if st.form_submit_button("➕ Adicionar Movimentação", type="primary"):
-                    data_hora_entrada_str = datetime.combine(data_entrada_nova, hora_entrada_nova).strftime('%Y-%m-%d %H:%M:%S')
-                    if adicionar_tramitacao(dados_tram[0], novo_setor, data_hora_entrada_str, observacao_nova):
-                        st.success("✅ Movimentação adicionada com sucesso!")
-                        st.rerun()
-                    else:
-                        st.error("❌ Erro ao adicionar movimentação.")
-
-            st.divider()
-            st.subheader("Histórico de Tramitação:")
-            tramitacoes = buscar_tramitacoes(dados_tram[0])
-
-            if tramitacoes:
-                tempos_setores = calcular_tempo_setores(tramitacoes)
-
-                # Exibir métricas de tempo
-                st.markdown("##### ⏱️ Tempo em cada setor:")
-                cols_metrics = st.columns(len(tempos_setores) if len(tempos_setores) > 0 else 1)
-                for idx, (setor, tempo) in enumerate(tempos_setores.items()):
-                    with cols_metrics[idx % len(cols_metrics)]:
-                        st.metric(f"{setor}", f"{tempo} dias")
-
-                total_dias = sum(tempos_setores.values())
-                st.metric("⏱️ Tempo Total de Tramitação", f"{total_dias} dias")
+            if processo:
                 st.divider()
 
-                for t in tramitacoes:
-                    # t[0]=id, t[1]=processo_id, t[2]=setor, t[3]=data_entrada, t[4]=data_saida, t[5]=observacao
-                    data_entrada_fmt = datetime.strptime(t[3], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')
-                    data_saida_fmt = "Em andamento"
-                    if t[4]:
-                        data_saida_fmt = datetime.strptime(t[4], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')
+                # Adicionar nova movimentação
+                st.subheader("➕ Registrar Nova Movimentação")
 
-                    icon = "➡️"
-                    if t[2] == "Protocolo": icon = "📝"
-                    elif t[2] == "Requerente": icon = "🧑‍💻"
-                    elif t[2] == "Analista": icon = "👩‍🔬"
-                    elif t[2] == "Fiscalização": icon = "👮"
-                    elif t[2] == "Parecer Externo": icon = "🏢"
-                    elif t[2] == "Emissão de Alvará": icon = "📜"
-                    elif t[2] == "Arquivo": icon = "🗄️"
+                with st.form("form_tramitacao", clear_on_submit=True):
+                    col1, col2, col3 = st.columns(3)
 
-                    st.markdown(f"**{icon} {t[2]}**")
-                    st.write(f"  - **Entrada:** {data_entrada_fmt}")
-                    st.write(f"  - **Saída:** {data_saida_fmt}")
-                    if t[5]:
-                        st.write(f"  - **Obs:** {t[5]}")
+                    with col1:
+                        setor_opcoes = [
+                            "Requerente",
+                            "Analista",
+                            "Fiscalização",
+                            "Parecer Externo",
+                            "Emissão de Alvará",
+                            "Protocolo",
+                            "Arquivo"
+                        ]
+                        setor = st.selectbox("Setor Responsável:", setor_opcoes, key="tram_setor")
 
-                    col_edit_tram, col_del_tram = st.columns(2)
-                    with col_edit_tram:
-                        if st.button("✏️ Editar Movimentação", key=f"edit_tram_{t[0]}", use_container_width=True):
-                            st.session_state[f"edit_tram_form_{t[0]}"] = True
-                    with col_del_tram:
-                        if st.button("🗑️ Deletar Movimentação", key=f"del_tram_{t[0]}", use_container_width=True, type="secondary"):
-                            if deletar_tramitacao(t[0]):
-                                st.success("✅ Movimentação deletada!")
-                                st.rerun()
-                            else:
-                                st.error("❌ Erro ao deletar movimentação.")
+                    with col2:
+                        data_mov = st.date_input("Data da Movimentação:", value=datetime.now().date(), key="tram_data")
 
-                    # Formulário de Edição de Tramitação
-                    if st.session_state.get(f"edit_tram_form_{t[0]}", False):
-                        st.subheader(f"Editar Movimentação no Setor: {t[2]}")
-                        with st.form(f"form_edit_tram_{t[0]}"):
-                            ed_setor = st.selectbox("Setor:", setores_disponiveis, 
-                                                    index=setores_disponiveis.index(t[2]), 
-                                                    key=f"ed_setor_{t[0]}")
+                    with col3:
+                        obs = st.text_input("Observação:", key="tram_obs", placeholder="Ex: Retornou para correções")
 
-                            ed_data_entrada_date = datetime.strptime(t[3], '%Y-%m-%d %H:%M:%S').date()
-                            ed_data_entrada_time = datetime.strptime(t[3], '%Y-%m-%d %H:%M:%S').time()
-                            ed_data_entrada = st.date_input("Data de Entrada:", value=ed_data_entrada_date, key=f"ed_data_entrada_date_{t[0]}")
-                            ed_hora_entrada = st.time_input("Hora de Entrada:", value=ed_data_entrada_time, key=f"ed_hora_entrada_time_{t[0]}")
+                    if st.form_submit_button("✅ Registrar Movimentação", type="primary", use_container_width=True):
+                        if adicionar_tramitacao(processo[0], setor, data_mov.strftime('%Y-%m-%d'), obs):
+                            st.success("✅ Movimentação registrada com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Erro ao registrar movimentação")
 
-                            ed_data_saida_date = None
-                            ed_data_saida_time = None
-                            if t[4]:
-                                ed_data_saida_date = datetime.strptime(t[4], '%Y-%m-%d %H:%M:%S').date()
-                                ed_data_saida_time = datetime.strptime(t[4], '%Y-%m-%d %H:%M:%S').time()
+                st.divider()
 
-                            ed_data_saida = st.date_input("Data de Saída (opcional):", value=ed_data_saida_date, key=f"ed_data_saida_date_{t[0]}")
-                            ed_hora_saida = st.time_input("Hora de Saída (opcional):", value=ed_data_saida_time, key=f"ed_hora_saida_time_{t[0]}")
+                # Histórico
+                st.subheader("📊 Histórico de Tramitação")
 
-                            ed_observacao = st.text_area("Observação:", value=t[5], key=f"ed_obs_{t[0]}")
+                tramitacoes = buscar_tramitacoes(processo[0])
 
-                            col_tram_btn1, col_tram_btn2 = st.columns(2)
-                            with col_tram_btn1:
-                                if st.form_submit_button("💾 Salvar Edição", type="primary", key=f"save_edit_tram_{t[0]}"):
-                                    data_entrada_full_str = datetime.combine(ed_data_entrada, ed_hora_entrada).strftime('%Y-%m-%d %H:%M:%S')
-                                    data_saida_full_str = None
-                                    if ed_data_saida:
-                                        data_saida_full_str = datetime.combine(ed_data_saida, ed_hora_saida).strftime('%Y-%m-%d %H:%M:%S')
+                if tramitacoes:
+                    # Estatísticas
+                    stats = estatisticas_tramitacao(processo[0])
 
-                                    if atualizar_tramitacao(t[0], ed_setor, data_entrada_full_str, data_saida_full_str, ed_observacao):
-                                        st.success("✅ Movimentação atualizada!")
-                                        st.session_state[f"edit_tram_form_{t[0]}"] = False
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ Erro ao atualizar movimentação.")
-                            with col_tram_btn2:
-                                if st.form_submit_button("↩️ Cancelar", key=f"cancel_edit_tram_{t[0]}"):
-                                    st.session_state[f"edit_tram_form_{t[0]}"] = False
+                    if stats:
+                        st.markdown("### 📈 Tempo por Setor")
+
+                        # Garante que sempre haverá colunas para exibir, mesmo que o número de setores seja pequeno
+                        num_cols = max(1, len(stats)) 
+                        cols = st.columns(num_cols)
+
+                        for idx, (setor, dias) in enumerate(stats.items()):
+                            with cols[idx % num_cols]: # Usa módulo para distribuir em colunas se houver mais setores que colunas
+                                st.metric(setor, f"{dias} dias")
+
+                        total_dias = sum(stats.values())
+                        st.divider()
+                        st.metric("⏱️ **Tempo Total de Tramitação**", f"{total_dias} dias")
+                        st.divider()
+
+                    # Detalhamento das movimentações
+                    st.markdown("### 📋 Detalhamento das Movimentações")
+
+                    for t in tramitacoes:
+                        # t[0]=id, t[1]=processo_id, t[2]=setor, t[3]=data_entrada, t[4]=data_saida, t[5]=observacao
+
+                        # Inicializa o estado de edição para cada tramitação
+                        if f"edit_tram_{t[0]}" not in st.session_state:
+                            st.session_state[f"edit_tram_{t[0]}"] = False
+
+                        # Se não estiver em modo de edição, mostra a visualização normal
+                        if not st.session_state[f"edit_tram_{t[0]}"]:
+                            col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
+
+                            with col1:
+                                icones_setor = {
+                                    "Requerente": "👤", "Analista": "👨‍💼", "Fiscalização": "🔍",
+                                    "Parecer Externo": "📋", "Emissão de Alvará": "✅",
+                                    "Protocolo": "📥", "Arquivo": "📁"
+                                }
+                                icone = icones_setor.get(t[2], "📌")
+                                st.write(f"{icone} **{t[2]}**")
+
+                            with col2:
+                                entrada = datetime.strptime(t[3], '%Y-%m-%d').strftime('%d/%m/%Y')
+                                st.write(f"📥 {entrada}")
+
+                            with col3:
+                                if t[4]:
+                                    saida = datetime.strptime(t[4], '%Y-%m-%d').strftime('%d/%m/%Y')
+                                    st.write(f"📤 {saida}")
+                                else:
+                                    st.write("🔄 **Em andamento**")
+
+                            with col4:
+                                tempo = calcular_dias(t[3], t[4])
+                                st.metric("Dias", tempo)
+
+                            with col5:
+                                if st.button("✏️", key=f"btn_edit_tram_item_{t[0]}", help="Editar movimentação"):
+                                    st.session_state[f"edit_tram_{t[0]}"] = True
                                     st.rerun()
-                    st.markdown("---")
-            else:
-                st.info("📭 Nenhuma movimentação registrada para este processo.")
+
+                                if st.button("🗑️", key=f"btn_del_tram_item_{t[0]}", help="Deletar movimentação"):
+                                    if deletar_tramitacao(t[0]):
+                                        st.success("✅ Movimentação deletada!")
+                                        st.rerun()
+
+                            if t[5]:
+                                st.caption(f"💬 {t[5]}")
+
+                        # Se estiver em modo de edição, mostra o formulário de edição
+                        else:
+                            st.subheader(f"✏️ Editando Movimentação #{t[0]}")
+                            with st.form(f"form_edit_tram_item_{t[0]}"):
+                                col_ed1, col_ed2 = st.columns(2)
+
+                                with col_ed1:
+                                    ed_setor = st.selectbox("Setor", setor_opcoes, 
+                                                            index=setor_opcoes.index(t[2]),
+                                                            key=f"ed_setor_tram_{t[0]}")
+                                    ed_entrada = st.date_input("Data Entrada", 
+                                                               value=datetime.strptime(t[3], '%Y-%m-%d').date(),
+                                                               key=f"ed_entrada_tram_{t[0]}")
+
+                                with col_ed2:
+                                    ed_saida = st.date_input("Data Saída", 
+                                                             value=datetime.strptime(t[4], '%Y-%m-%d').date() if t[4] else None,
+                                                             key=f"ed_saida_tram_{t[0]}")
+                                    ed_obs = st.text_area("Observação", value=t[5] or "", key=f"ed_obs_tram_{t[0]}")
+
+                                col_save, col_cancel = st.columns(2)
+
+                                with col_save:
+                                    if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
+                                        if atualizar_tramitacao(t[0], ed_setor, 
+                                                               ed_entrada.strftime('%Y-%m-%d'),
+                                                               ed_saida.strftime('%Y-%m-%d') if ed_saida else None,
+                                                               ed_obs):
+                                            st.success("✅ Movimentação atualizada!")
+                                            st.session_state[f"edit_tram_{t[0]}"] = False
+                                            st.rerun()
+
+                                with col_cancel:
+                                    if st.form_submit_button("❌ Cancelar Edição", use_container_width=True):
+                                        st.session_state[f"edit_tram_{t[0]}"] = False
+                                        st.rerun()
+
+                        st.divider() # Separador para cada item do histórico
+                else:
+                    st.info("📭 Nenhuma movimentação registrada para este processo")
 
 # ==================== ABA 4: KANBAN ====================
 with tab4:
-    st.header("📊 Kanban de Processos")
+    st.header("📊 Kanban - Gestão Visual de Processos")
 
-    status_list = ['Protocolado', 'Em Análise', 'Aguardando Correções', 'Aprovado', 'Reprovado']
-
-    # Cores para os cards (opcional, para visualização)
-    status_colors = {
-        'Protocolado': '#f0f2f6', # Cinza claro
-        'Em Análise': '#e0f2f7',  # Azul claro
-        'Aguardando Correções': '#fff3cd', # Amarelo claro
-        'Aprovado': '#d4edda',    # Verde claro
-        'Reprovado': '#f8d7da'    # Vermelho claro
-    }
+    status_list = ["Protocolado", "Em Análise", "Aguardando Correções", "Aprovado", "Reprovado"]
 
     cols = st.columns(len(status_list))
 
-    for i, status in enumerate(status_list):
-        with cols[i]:
-            st.subheader(f"{status} ({len(listar_por_status(status))})")
-            st.markdown("---")
+    for idx, status in enumerate(status_list):
+        with cols[idx]:
+            # Cor do card por status
+            if status == "Aprovado":
+                color = "green"
+            elif status == "Reprovado":
+                color = "red"
+            elif status == "Em Análise":
+                color = "blue"
+            elif status == "Aguardando Correções":
+                color = "orange"
+            else: # Protocolado
+                color = "gray"
 
-            procs_by_status = listar_por_status(status)
-            if not procs_by_status:
-                st.info("Vazio")
+            procs_status = listar_por_status(status)
 
-            for p in procs_by_status:
-                # p[0]=id, p[1]=numero, p[2]=rt, p[3]=requerente, p[4]=analista, p[5]=uso, p[6]=tipologia, p[7]=area, p[8]=data_protocolo, p[9]=status, p[10]=data_cadastro
+            st.markdown(f"### :{color}[{status}]")
+            st.caption(f"Total: {len(procs_status)} processo(s)")
 
-                # Card do processo
-                st.markdown(f"""
+            st.divider()
+
+            if not procs_status:
+                st.info("Nenhum processo aqui.")
+            else:
+                for p in procs_status:
+                    # p[0]=id, p[1]=numero, p[2]=rt, p[3]=requerente, p[4]=analista, p[5]=uso, p[6]=tipologia, p[7]=area, p[8]=data_protocolo, p[9]=status, p[10]=data_cadastro
+
+                    st.markdown(f"""
                     <div style='
-                        border: 1px solid #ddd;
-                        border-left: 5px solid {status_colors.get(status, '#ccc')};
-                        padding: 10px;
-                        border-radius: 5px;
+                        padding: 15px;
+                        border-radius: 10px;
+                        border-left: 5px solid {color};
+                        background-color: rgba(128,128,128,0.1);
                         margin-bottom: 10px;
-                        background-color: {status_colors.get(status, '#f9f9f9')};
                     '>
                         <b>{p[1]}</b><br>
                         👤 {p[3]}<br>
@@ -650,24 +726,23 @@ with tab4:
                     </div>
                     """, unsafe_allow_html=True)
 
-                # Botões para mover entre status
-                other_statuses = [s for s in status_list if s != status]
+                    # Botões para mover entre status
+                    # Cria uma lista de status para os botões, excluindo o status atual
+                    other_statuses = [s for s in status_list if s != status]
 
-                # Divide os botões em colunas para melhor visualização
-                num_other_statuses = len(other_statuses)
-                if num_other_statuses > 0:
-                    cols_btn = st.columns(num_other_statuses)
-                    for btn_idx, new_status in enumerate(other_statuses):
-                        with cols_btn[btn_idx]:
-                            if st.button(f"→ {new_status}", key=f"move_{p[0]}_{new_status}", 
-                                       use_container_width=True, help=f"Mover para {new_status}"):
-                                if atualizar_status(p[0], new_status):
-                                    st.success(f"✅ Processo {p[1]} movido para '{new_status}'")
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ Erro ao mover processo {p[1]}.")
+                    # Divide os botões em colunas para melhor visualização
+                    num_other_statuses = len(other_statuses)
+                    if num_other_statuses > 0:
+                        cols_btn = st.columns(num_other_statuses)
+                        for btn_idx, new_status in enumerate(other_statuses):
+                            with cols_btn[btn_idx]:
+                                if st.button(f"→ {new_status}", key=f"move_{p[0]}_{new_status}", 
+                                           use_container_width=True, help=f"Mover para {new_status}"):
+                                    if atualizar_status(p[0], new_status):
+                                        st.success(f"✅ Processo {p[1]} movido para '{new_status}'")
+                                        st.rerun()
 
-                st.markdown("---") # Separador entre cards
+                    st.markdown("---") # Separador entre cards
 
 # ==================== ABA 5: ANALISAR ====================
 with tab5:
@@ -904,92 +979,84 @@ Sistema de Validação de Processos - Prefeitura de Contagem
                             st.error(f"❌ Erro durante a análise: {str(erro)}")
                             st.info("Verifique se sua API Key está correta e se os PDFs são válidos.")
 
-# ==================== ABA 6: DASHBOARD & RELATÓRIOS ====================
+# ==================== ABA 6: GRÁFICOS ====================
 with tab6:
-    st.header("📈 Dashboard & Relatórios")
+    st.header("📈 Análise Gráfica dos Processos")
 
-    df_processos = get_processos_df()
-    df_tramitacoes = get_tramitacoes_df()
+    # Converte a lista de processos em um DataFrame do pandas
+    # As colunas devem corresponder à ordem do SELECT * na função listar()
+    procs_df = pd.DataFrame(listar(), columns=[
+        'id', 'numero', 'rt', 'requerente', 'analista', 'uso', 
+        'tipologia', 'area', 'data_protocolo', 'status', 'data_cadastro'
+    ])
 
-    if df_processos.empty:
-        st.info("📭 Nenhum processo cadastrado para gerar relatórios.")
+    if procs_df.empty:
+        st.info("📭 Nenhum dado para gerar gráficos. Cadastre processos primeiro na aba 'Cadastrar'.")
     else:
-        st.subheader("Visão Geral dos Processos")
-        col_total, col_aprovados, col_reprovados, col_analise = st.columns(4)
-
-        total_processos = len(df_processos)
-        aprovados = df_processos[df_processos['status'] == 'Aprovado'].shape[0]
-        reprovados = df_processos[df_processos['status'] == 'Reprovado'].shape[0]
-        em_analise = df_processos[df_processos['status'] == 'Em Análise'].shape[0]
-
-        col_total.metric("Total de Processos", total_processos)
-        col_aprovados.metric("Aprovados", aprovados)
-        col_reprovados.metric("Reprovados", reprovados)
-        col_analise.metric("Em Análise", em_analise)
+        st.subheader("Selecione o tipo de gráfico para visualizar os dados:")
+        chart_type = st.selectbox("Escolha a análise:", [
+            "Processos por Uso",
+            "Processos por Tipologia",
+            "Processos por Analista",
+            "Distribuição de Status Kanban",
+            "Área Total por Uso"
+        ])
 
         st.divider()
 
-        st.subheader("Gráficos de Análise")
-
-        chart_type = st.selectbox(
-            "Selecione o tipo de gráfico:",
-            ["Status dos Processos (Pizza)", "Uso dos Processos (Barras)", 
-             "Tipologia dos Processos (Barras)", "Área dos Projetos (Histograma)",
-             "Tempo Médio por Setor (Barras)"],
-            key="chart_selector"
-        )
-
-        if chart_type == "Status dos Processos (Pizza)":
-            fig = px.pie(df_processos, names='status', title='Distribuição de Processos por Status',
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
-            st.plotly_chart(fig, use_container_width=True)
-
-        elif chart_type == "Uso dos Processos (Barras)":
-            fig = px.bar(df_processos['uso'].value_counts().reset_index(), 
-                         x='index', y='uso', 
-                         labels={'index': 'Uso', 'uso': 'Número de Processos'},
+        if chart_type == "Processos por Uso":
+            st.markdown("### 📊 Quantidade de Processos por Tipo de Uso")
+            df_grouped = procs_df['uso'].value_counts().reset_index()
+            df_grouped.columns = ['Uso', 'Quantidade']
+            fig = px.bar(df_grouped, x='Uso', y='Quantidade', 
                          title='Número de Processos por Tipo de Uso',
-                         color_discrete_sequence=px.colors.qualitative.Vivid)
+                         labels={'Uso': 'Tipo de Uso', 'Quantidade': 'Número de Processos'},
+                         color='Uso', # Colore as barras por tipo de uso
+                         template='plotly_white') # Estilo do gráfico
             st.plotly_chart(fig, use_container_width=True)
 
-        elif chart_type == "Tipologia dos Processos (Barras)":
-            fig = px.bar(df_processos['tipologia'].value_counts().reset_index(), 
-                         x='index', y='tipologia', 
-                         labels={'index': 'Tipologia', 'tipologia': 'Número de Processos'},
+        elif chart_type == "Processos por Tipologia":
+            st.markdown("### 📊 Quantidade de Processos por Tipologia")
+            df_grouped = procs_df['tipologia'].value_counts().reset_index()
+            df_grouped.columns = ['Tipologia', 'Quantidade']
+            fig = px.bar(df_grouped, x='Tipologia', y='Quantidade', 
                          title='Número de Processos por Tipologia',
-                         color_discrete_sequence=px.colors.qualitative.Bold)
+                         labels={'Tipologia': 'Tipologia do Projeto', 'Quantidade': 'Número de Processos'},
+                         color='Tipologia',
+                         template='plotly_white')
             st.plotly_chart(fig, use_container_width=True)
 
-        elif chart_type == "Área dos Projetos (Histograma)":
-            fig = px.histogram(df_processos, x='area', nbins=10, 
-                               title='Distribuição da Área dos Projetos (m²)',
-                               labels={'area': 'Área (m²)', 'count': 'Número de Projetos'},
-                               color_discrete_sequence=px.colors.qualitative.G10)
+        elif chart_type == "Processos por Analista":
+            st.markdown("### 📊 Quantidade de Processos por Analista")
+            df_grouped = procs_df['analista'].value_counts().reset_index()
+            df_grouped.columns = ['Analista', 'Quantidade']
+            fig = px.bar(df_grouped, x='Analista', y='Quantidade', 
+                         title='Número de Processos por Analista',
+                         labels={'Analista': 'Nome do Analista', 'Quantidade': 'Número de Processos'},
+                         color='Analista',
+                         template='plotly_white')
             st.plotly_chart(fig, use_container_width=True)
 
-        elif chart_type == "Tempo Médio por Setor (Barras)":
-            if df_tramitacoes.empty:
-                st.info("📭 Nenhuma tramitação registrada para calcular o tempo por setor.")
-            else:
-                # Agrupar tramitações por processo e calcular o tempo em cada setor
-                # Isso é um pouco mais complexo, vamos simplificar para o tempo total por setor
+        elif chart_type == "Distribuição de Status Kanban":
+            st.markdown("### 📊 Distribuição de Processos por Status Kanban")
+            df_grouped = procs_df['status'].value_counts().reset_index()
+            df_grouped.columns = ['Status', 'Quantidade']
+            fig = px.pie(df_grouped, values='Quantidade', names='Status', 
+                         title='Distribuição Percentual de Processos por Status',
+                         hole=0.3, # Cria um gráfico de rosca
+                         template='plotly_white')
+            st.plotly_chart(fig, use_container_width=True)
 
-                # Para calcular o tempo médio por setor, precisamos do processo_id
-                # e garantir que data_saida - data_entrada seja positivo
-                df_tramitacoes_valid = df_tramitacoes[df_tramitacoes['duracao_dias'] >= 0]
-
-                if not df_tramitacoes_valid.empty:
-                    # Calcular o tempo total que cada setor teve processos
-                    tempo_total_por_setor = df_tramitacoes_valid.groupby('setor')['duracao_dias'].sum().reset_index()
-
-                    fig = px.bar(tempo_total_por_setor, x='setor', y='duracao_dias',
-                                 labels={'setor': 'Setor', 'duracao_dias': 'Tempo Total em Dias'},
-                                 title='Tempo Total de Processos em Cada Setor',
-                                 color_discrete_sequence=px.colors.qualitative.Set2)
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("Não há dados de tramitação válidos com duração calculada.")
-
+        elif chart_type == "Área Total por Uso":
+            st.markdown("### 📊 Área Construída Total por Tipo de Uso")
+            df_grouped = procs_df.groupby('uso')['area'].sum().reset_index()
+            df_grouped.columns = ['Uso', 'Area Total (m²)']
+            fig = px.bar(df_grouped, x='Uso', y='Area Total (m²)', 
+                         title='Área Construída Total por Tipo de Uso',
+                         labels={'Uso': 'Tipo de Uso', 'Area Total (m²)': 'Área Total (m²)'},
+                         color='Uso',
+                         template='plotly_white')
+            st.plotly_chart(fig, use_container_width=True)
 
 # Rodapé
 st.divider()
@@ -998,6 +1065,6 @@ st.markdown("""
 <div style='text-align: center'>
     <p><strong>🏛️ Sistema de Validação de Processos com Inteligência Artificial</strong></p>
     <p>Prefeitura de Contagem - MG • Setor de Liberação de Alvarás de Construção</p>
-    <p style='font-size: 0.85em; color: #666;'>Powered by Google Gemini</p>
+    <p style='font-size: 0.85em; color: #666;'>Powered by Google Gemini, Streamlit, Plotly & Pandas</p>
 </div>
 """, unsafe_allow_html=True)
