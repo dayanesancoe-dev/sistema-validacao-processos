@@ -60,6 +60,18 @@ def init_db():
         )
     ''')
 
+    # Tabela para armazenar múltiplos PDFs dos projetos
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS projeto_pdfs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            processo_id INTEGER NOT NULL,
+            pdf_nome TEXT NOT NULL,
+            pdf_conteudo BLOB NOT NULL,
+            data_upload TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (processo_id) REFERENCES processos(id)
+        )
+    ''')
+
     # Adicionar colunas de PDF nas legislações se não existirem
     try:
         cursor.execute('ALTER TABLE legislacoes ADD COLUMN pdf_nome TEXT')
@@ -68,17 +80,6 @@ def init_db():
 
     try:
         cursor.execute('ALTER TABLE legislacoes ADD COLUMN pdf_conteudo BLOB')
-    except sqlite3.OperationalError:
-        pass
-
-    # Adicionar colunas de PDF do projeto nos processos se não existirem
-    try:
-        cursor.execute('ALTER TABLE processos ADD COLUMN projeto_pdf_nome TEXT')
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute('ALTER TABLE processos ADD COLUMN projeto_pdf_conteudo BLOB')
     except sqlite3.OperationalError:
         pass
 
@@ -101,29 +102,50 @@ def cadastrar_processo(numero, requerente, rt, analista, uso, area):
         st.error(f"❌ Processo {numero} já existe!")
         return False
 
-def anexar_pdf_projeto(processo_id, pdf_file):
+def anexar_pdfs_projeto(processo_id, pdf_files):
+    """Anexa múltiplos PDFs a um processo"""
     try:
-        pdf_bytes = pdf_file.read()
-        pdf_nome = pdf_file.name
-        cursor.execute('''
-            UPDATE processos 
-            SET projeto_pdf_nome = ?, projeto_pdf_conteudo = ?
-            WHERE id = ?
-        ''', (pdf_nome, pdf_bytes, processo_id))
+        sucesso = 0
+        for pdf_file in pdf_files:
+            pdf_bytes = pdf_file.read()
+            pdf_nome = pdf_file.name
+            cursor.execute('''
+                INSERT INTO projeto_pdfs (processo_id, pdf_nome, pdf_conteudo)
+                VALUES (?, ?, ?)
+            ''', (processo_id, pdf_nome, pdf_bytes))
+            sucesso += 1
         conn.commit()
-        st.success(f"✅ PDF do projeto anexado com sucesso!")
+        st.success(f"✅ {sucesso} arquivo(s) PDF anexado(s) com sucesso!")
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao anexar PDF: {str(e)}")
+        st.error(f"❌ Erro ao anexar PDFs: {str(e)}")
         return False
 
-def obter_pdf_projeto(processo_id):
+def listar_pdfs_projeto(processo_id):
+    """Lista todos os PDFs de um processo"""
+    cursor.execute('''
+        SELECT id, pdf_nome, data_upload FROM projeto_pdfs 
+        WHERE processo_id = ?
+        ORDER BY data_upload DESC
+    ''', (processo_id,))
+    return cursor.fetchall()
+
+def obter_pdf_projeto(pdf_id):
+    """Obtém um PDF específico pelo ID"""
+    cursor.execute('SELECT pdf_nome, pdf_conteudo FROM projeto_pdfs WHERE id = ?', (pdf_id,))
+    resultado = cursor.fetchone()
+    return resultado if resultado else (None, None)
+
+def excluir_pdf_projeto(pdf_id):
+    """Exclui um PDF específico"""
     try:
-        cursor.execute('SELECT projeto_pdf_nome, projeto_pdf_conteudo FROM processos WHERE id = ?', (processo_id,))
-        resultado = cursor.fetchone()
-        return resultado if resultado else (None, None)
-    except sqlite3.OperationalError:
-        return (None, None)
+        cursor.execute('DELETE FROM projeto_pdfs WHERE id = ?', (pdf_id,))
+        conn.commit()
+        st.success("✅ PDF excluído com sucesso!")
+        return True
+    except Exception as e:
+        st.error(f"❌ Erro ao excluir PDF: {str(e)}")
+        return False
 
 def listar_processos():
     cursor.execute('SELECT id, numero_processo, requerente, rt, uso, area_total, estatus FROM processos')
@@ -395,33 +417,48 @@ with tab3:
 
         st.divider()
 
-        # Seção de anexar PDF do projeto
-        st.subheader("📎 Anexar PDF do Projeto")
+        # Seção de gerenciar PDFs do projeto
+        st.subheader("📎 Gerenciar PDFs do Projeto")
 
-        col_upload, col_download = st.columns([3, 1])
+        col_upload, col_lista = st.columns([1, 1])
 
         with col_upload:
-            pdf_projeto = st.file_uploader("Selecione o PDF do projeto arquitetônico", 
-                                          type=['pdf'], 
-                                          key="upload_pdf_projeto")
+            st.write("**Anexar novos arquivos:**")
+            pdfs_projeto = st.file_uploader(
+                "Selecione um ou mais PDFs do projeto", 
+                type=['pdf'], 
+                accept_multiple_files=True,
+                key="upload_pdfs_projeto"
+            )
 
-            if pdf_projeto:
-                if st.button("💾 Salvar PDF do Projeto", key="btn_salvar_pdf_projeto"):
-                    anexar_pdf_projeto(proc_id, pdf_projeto)
+            if pdfs_projeto:
+                if st.button("💾 Salvar PDFs", key="btn_salvar_pdfs_projeto"):
+                    anexar_pdfs_projeto(proc_id, pdfs_projeto)
+                    st.rerun()
 
-        with col_download:
-            # Verificar se já existe PDF anexado
-            pdf_nome_projeto, pdf_conteudo_projeto = obter_pdf_projeto(proc_id)
-            if pdf_conteudo_projeto:
-                st.download_button(
-                    label="📄 Baixar Projeto",
-                    data=pdf_conteudo_projeto,
-                    file_name=pdf_nome_projeto,
-                    mime="application/pdf",
-                    key="download_pdf_projeto"
-                )
+        with col_lista:
+            st.write("**Arquivos anexados:**")
+            pdfs_existentes = listar_pdfs_projeto(proc_id)
+
+            if pdfs_existentes:
+                for pdf in pdfs_existentes:
+                    col_nome, col_btn = st.columns([3, 1])
+
+                    with col_nome:
+                        st.write(f"📄 {pdf[1]}")
+
+                    with col_btn:
+                        pdf_nome, pdf_conteudo = obter_pdf_projeto(pdf[0])
+                        if pdf_conteudo:
+                            st.download_button(
+                                label="⬇️",
+                                data=pdf_conteudo,
+                                file_name=pdf_nome,
+                                mime="application/pdf",
+                                key=f"download_pdf_proj_{pdf[0]}"
+                            )
             else:
-                st.info("Nenhum PDF anexado")
+                st.info("Nenhum PDF anexado ainda")
 
         st.divider()
 
@@ -432,30 +469,39 @@ with tab3:
                 st.divider()
                 st.subheader(f"📋 Resultado da Validação — Processo {resultado['numero_processo']}")
 
-                # Mostrar PDFs anexados
+                # Mostrar PDFs disponíveis
                 col_pdf1, col_pdf2 = st.columns(2)
 
                 with col_pdf1:
+                    st.write("**📜 Legislação:**")
                     pdf_nome_leg, pdf_conteudo_leg = obter_pdf_legislacao(leg_id)
                     if pdf_conteudo_leg:
                         st.download_button(
-                            label="📜 Baixar Legislação",
+                            label="📥 Baixar Legislação",
                             data=pdf_conteudo_leg,
                             file_name=pdf_nome_leg,
                             mime="application/pdf",
                             key="download_leg_validacao"
                         )
+                    else:
+                        st.info("Sem PDF anexado")
 
                 with col_pdf2:
-                    pdf_nome_proj, pdf_conteudo_proj = obter_pdf_projeto(proc_id)
-                    if pdf_conteudo_proj:
-                        st.download_button(
-                            label="📐 Baixar Projeto",
-                            data=pdf_conteudo_proj,
-                            file_name=pdf_nome_proj,
-                            mime="application/pdf",
-                            key="download_proj_validacao"
-                        )
+                    st.write("**📐 Arquivos do Projeto:**")
+                    pdfs_proj = listar_pdfs_projeto(proc_id)
+                    if pdfs_proj:
+                        for pdf in pdfs_proj:
+                            pdf_nome, pdf_conteudo = obter_pdf_projeto(pdf[0])
+                            if pdf_conteudo:
+                                st.download_button(
+                                    label=f"📥 {pdf[1]}",
+                                    data=pdf_conteudo,
+                                    file_name=pdf_nome,
+                                    mime="application/pdf",
+                                    key=f"download_proj_val_{pdf[0]}"
+                                )
+                    else:
+                        st.info("Sem PDFs anexados")
 
                 st.divider()
 
