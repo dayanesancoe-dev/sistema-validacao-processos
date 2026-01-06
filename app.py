@@ -164,7 +164,7 @@ with tab1:
                             texto_completo_legislacao += page.extract_text() + "\n"
 
                     # Criar modelo Gemini
-                    model = genai.GenerativeModel('gemini-pro')
+                    model = genai.GenerativeModel('gemini-1.5-flash')
 
                     # Prompt detalhado
                     prompt_analise = f"""Você é um ANALISTA TÉCNICO ESPECIALIZADO em projetos arquitetônicos da Prefeitura de Contagem - MG.
