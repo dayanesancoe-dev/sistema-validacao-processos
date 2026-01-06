@@ -110,7 +110,6 @@ conn, cursor = init_db()
 # ==================== FUNÇÕES AUXILIARES ====================
 
 def extrair_texto_pdf(pdf_bytes):
-    """Extrai texto de um PDF em bytes"""
     if not PDF_DISPONIVEL:
         return "[PyPDF2 não instalado]"
 
@@ -125,7 +124,6 @@ def extrair_texto_pdf(pdf_bytes):
         return f"[Erro ao extrair texto: {str(e)}]"
 
 def analisar_texto_projeto(texto_projeto, regras):
-    """Analisa o texto do projeto buscando palavras-chave das regras"""
     analises = []
 
     for regra in regras:
@@ -157,13 +155,11 @@ def analisar_texto_projeto(texto_projeto, regras):
     return analises
 
 def extrair_palavras_chave(texto):
-    """Extrai palavras-chave relevantes de um texto"""
     stopwords = ['de', 'da', 'do', 'a', 'o', 'e', 'para', 'com', 'em', 'ser', 'deve', 'que', 'ter']
     palavras = re.findall(r'\b\w{4,}\b', texto.lower())
     return [p for p in palavras if p not in stopwords][:5]
 
 def gerar_relatorio_pdf(resultado, analise_textual):
-    """Gera um relatório em PDF com os resultados da validação"""
     if not REPORTLAB_DISPONIVEL:
         st.error("ReportLab não está instalado. Instale com: pip install reportlab")
         return None
@@ -275,20 +271,6 @@ def cadastrar_processo(numero, requerente, rt, analista, uso, area):
         st.error(f"❌ Processo {numero} já existe!")
         return False
 
-def editar_processo(processo_id, numero, requerente, rt, analista, uso, area, status):
-    try:
-        cursor.execute('''
-            UPDATE processos 
-            SET numero_processo = ?, requerente = ?, rt = ?, analista = ?, uso = ?, area_total = ?, estatus = ?
-            WHERE id = ?
-        ''', (numero, requerente, rt, analista, uso, area, status, processo_id))
-        conn.commit()
-        st.success(f"✅ Processo atualizado!")
-        return True
-    except Exception as e:
-        st.error(f"❌ Erro: {str(e)}")
-        return False
-
 def deletar_processo(processo_id):
     try:
         cursor.execute('DELETE FROM pdfs_projeto WHERE processo_id = ?', (processo_id,))
@@ -299,10 +281,6 @@ def deletar_processo(processo_id):
     except Exception as e:
         st.error(f"❌ Erro: {str(e)}")
         return False
-
-def obter_processo(processo_id):
-    cursor.execute('SELECT * FROM processos WHERE id = ?', (processo_id,))
-    return cursor.fetchone()
 
 def listar_processos():
     cursor.execute('SELECT id, numero_processo, requerente, rt, uso, area_total, estatus FROM processos')
@@ -318,16 +296,6 @@ def cadastrar_legislacao(nome, descricao):
         st.error(f"❌ Legislação '{nome}' já existe!")
         return None
 
-def editar_legislacao(legislacao_id, nome, descricao):
-    try:
-        cursor.execute('UPDATE legislacoes SET nome = ?, descricao = ? WHERE id = ?', (nome, descricao, legislacao_id))
-        conn.commit()
-        st.success(f"✅ Legislação atualizada!")
-        return True
-    except Exception as e:
-        st.error(f"❌ Erro: {str(e)}")
-        return False
-
 def deletar_legislacao(legislacao_id):
     try:
         cursor.execute('DELETE FROM regras_legislacao WHERE legislacao_id = ?', (legislacao_id,))
@@ -339,10 +307,6 @@ def deletar_legislacao(legislacao_id):
     except Exception as e:
         st.error(f"❌ Erro: {str(e)}")
         return False
-
-def obter_legislacao(legislacao_id):
-    cursor.execute('SELECT * FROM legislacoes WHERE id = ?', (legislacao_id,))
-    return cursor.fetchone()
 
 def listar_legislacoes():
     cursor.execute('SELECT id, nome, descricao FROM legislacoes')
@@ -375,34 +339,6 @@ def obter_todos_pdfs_projeto(processo_id):
 def deletar_pdf_projeto(pdf_id):
     try:
         cursor.execute('DELETE FROM pdfs_projeto WHERE id = ?', (pdf_id,))
-        conn.commit()
-        return True
-    except:
-        return False
-
-def anexar_pdf_legislacao(legislacao_id, pdf_file):
-    try:
-        pdf_bytes = pdf_file.read()
-        cursor.execute('INSERT INTO pdfs_legislacao (legislacao_id, pdf_nome, pdf_conteudo) VALUES (?, ?, ?)', 
-                      (legislacao_id, pdf_file.name, pdf_bytes))
-        conn.commit()
-        return True
-    except Exception as e:
-        st.error(f"❌ Erro: {str(e)}")
-        return False
-
-def listar_pdfs_legislacao(legislacao_id):
-    cursor.execute('SELECT id, pdf_nome, data_upload FROM pdfs_legislacao WHERE legislacao_id = ? ORDER BY data_upload DESC', (legislacao_id,))
-    return cursor.fetchall()
-
-def obter_pdf_legislacao_por_id(pdf_id):
-    cursor.execute('SELECT pdf_nome, pdf_conteudo FROM pdfs_legislacao WHERE id = ?', (pdf_id,))
-    resultado = cursor.fetchone()
-    return resultado if resultado else (None, None)
-
-def deletar_pdf_legislacao(pdf_id):
-    try:
-        cursor.execute('DELETE FROM pdfs_legislacao WHERE id = ?', (pdf_id,))
         conn.commit()
         return True
     except:
@@ -527,14 +463,14 @@ with tab1:
 
     with col1:
         st.subheader("➕ Cadastrar Processo")
-        numero = st.text_input("Número", key="novo_numero")
-        requerente = st.text_input("Requerente", key="novo_requerente")
-        rt = st.text_input("RT", key="novo_rt")
-        analista = st.text_input("Analista", key="novo_analista")
-        uso = st.selectbox("Uso", ["Residencial", "Comercial", "Industrial", "Misto", "Outro"], key="novo_uso")
-        area = st.number_input("Área (m²)", min_value=0.0, step=0.1, key="nova_area")
+        numero = st.text_input("Número", key="proc_numero_input")
+        requerente = st.text_input("Requerente", key="proc_req_input")
+        rt = st.text_input("RT", key="proc_rt_input")
+        analista = st.text_input("Analista", key="proc_ana_input")
+        uso = st.selectbox("Uso", ["Residencial", "Comercial", "Industrial", "Misto", "Outro"], key="proc_uso_select")
+        area = st.number_input("Área (m²)", min_value=0.0, step=0.1, key="proc_area_input")
 
-        if st.button("Cadastrar", key="btn_cad_proc"):
+        if st.button("Cadastrar", key="proc_cad_btn"):
             if numero and requerente and rt and analista and area > 0:
                 cadastrar_processo(numero, requerente, rt, analista, uso, area)
                 st.rerun()
@@ -544,9 +480,9 @@ with tab1:
         processos = listar_processos()
         if processos:
             for proc in processos:
-                with st.expander(f"{proc[1]} - {proc[2]}"):
+                with st.expander(f"{proc[1]} - {proc[2]}", expanded=False):
                     st.write(f"RT: {proc[3]} | Uso: {proc[4]} | Área: {proc[5]} m²")
-                    if st.button("🗑️ Deletar", key=f"del_proc_{proc[0]}"):
+                    if st.button("🗑️ Deletar", key=f"proc_del_btn_{proc[0]}"):
                         deletar_processo(proc[0])
                         st.rerun()
 
@@ -558,10 +494,10 @@ with tab2:
 
     with col1:
         st.subheader("➕ Cadastrar Legislação")
-        nome_leg = st.text_input("Nome", key="nova_leg")
-        desc_leg = st.text_area("Descrição", key="nova_desc_leg")
+        nome_leg = st.text_input("Nome", key="leg_nome_input")
+        desc_leg = st.text_area("Descrição", key="leg_desc_input")
 
-        if st.button("Cadastrar", key="btn_cad_leg"):
+        if st.button("Cadastrar", key="leg_cad_btn"):
             if nome_leg and desc_leg:
                 cadastrar_legislacao(nome_leg, desc_leg)
                 st.rerun()
@@ -571,9 +507,9 @@ with tab2:
         legislacoes = listar_legislacoes()
         if legislacoes:
             for leg in legislacoes:
-                with st.expander(leg[1]):
+                with st.expander(leg[1], expanded=False):
                     st.write(leg[2])
-                    if st.button("🗑️ Deletar", key=f"del_leg_{leg[0]}"):
+                    if st.button("🗑️ Deletar", key=f"leg_del_btn_{leg[0]}"):
                         deletar_legislacao(leg[0])
                         st.rerun()
 
@@ -581,7 +517,7 @@ with tab2:
     st.subheader("➕ Adicionar Regras")
 
     if legislacoes:
-        leg_sel = st.selectbox("Legislação", [f"ID {l[0]} - {l[1]}" for l in legislacoes], key="sel_leg")
+        leg_sel = st.selectbox("Legislação", [f"ID {l[0]} - {l[1]}" for l in legislacoes], key="regra_leg_select")
         leg_id = int(leg_sel.split()[1])
 
         regras = listar_regras_legislacao(leg_id)
@@ -590,7 +526,7 @@ with tab2:
             for r in regras:
                 col_r, col_d = st.columns([5, 1])
                 col_r.write(f"📌 {r[1]}: {r[2]}")
-                if col_d.button("🗑️", key=f"del_r_{r[0]}"):
+                if col_d.button("🗑️", key=f"regra_del_btn_{r[0]}"):
                     deletar_regra(r[0])
                     st.rerun()
 
@@ -598,16 +534,16 @@ with tab2:
         col1, col2 = st.columns(2)
 
         with col1:
-            artigo = st.text_input("Artigo", key="novo_art")
-            descricao = st.text_area("Descrição", key="nova_desc")
-            campo = st.selectbox("Campo", ["area_total", "uso", "estatus", "numero_processo"], key="novo_campo")
+            artigo = st.text_input("Artigo", key="regra_art_input")
+            descricao = st.text_area("Descrição", key="regra_desc_input")
+            campo = st.selectbox("Campo", ["area_total", "uso", "estatus", "numero_processo"], key="regra_campo_select")
 
         with col2:
-            operador = st.selectbox("Operador", [">=", "<=", ">", "<", "==", "!="], key="novo_op")
-            valor = st.number_input("Valor", step=0.1, key="novo_val")
-            mensagem = st.text_input("Mensagem", key="nova_msg")
+            operador = st.selectbox("Operador", [">=", "<=", ">", "<", "==", "!="], key="regra_op_select")
+            valor = st.number_input("Valor", step=0.1, key="regra_val_input")
+            mensagem = st.text_input("Mensagem", key="regra_msg_input")
 
-        if st.button("Adicionar Regra", key="btn_add_regra"):
+        if st.button("Adicionar Regra", key="regra_add_btn"):
             if artigo and descricao and mensagem:
                 adicionar_regra(leg_id, artigo, descricao, campo, operador, valor, mensagem)
                 st.rerun()
@@ -623,11 +559,11 @@ with tab3:
         col1, col2 = st.columns(2)
 
         with col1:
-            proc_sel = st.selectbox("Processo", [f"ID {p[0]} - {p[1]}" for p in processos], key="sel_proc")
+            proc_sel = st.selectbox("Processo", [f"ID {p[0]} - {p[1]}" for p in processos], key="val_proc_select")
             proc_id = int(proc_sel.split()[1])
 
         with col2:
-            leg_sel = st.selectbox("Legislação", [f"ID {l[0]} - {l[1]}" for l in legislacoes], key="sel_leg")
+            leg_sel = st.selectbox("Legislação", [f"ID {l[0]} - {l[1]}" for l in legislacoes], key="val_leg_select")
             leg_id = int(leg_sel.split()[1])
 
         st.divider()
@@ -635,21 +571,21 @@ with tab3:
 
         pdfs = listar_pdfs_projeto(proc_id)
         if pdfs:
-            for pdf in pdfs:
+            for idx, pdf in enumerate(pdfs):
                 col_a, col_b, col_c = st.columns([3, 1, 1])
                 col_a.write(f"📄 {pdf[1]}")
 
                 pdf_nome, pdf_cont = obter_pdf_projeto_por_id(pdf[0])
                 if pdf_cont:
-                    col_b.download_button("⬇️", pdf_cont, pdf_nome, mime="application/pdf", key=f"dl_p_{pdf[0]}")
-                    if col_c.button("🗑️", key=f"del_p_{pdf[0]}"):
+                    col_b.download_button("⬇️", pdf_cont, pdf_nome, mime="application/pdf", key=f"val_pdf_dl_{pdf[0]}_{idx}")
+                    if col_c.button("🗑️", key=f"val_pdf_del_{pdf[0]}_{idx}"):
                         deletar_pdf_projeto(pdf[0])
                         st.rerun()
 
-        novos = st.file_uploader("Anexar PDFs", type=['pdf'], accept_multiple_files=True, key="up_pdfs")
-        tipo = st.selectbox("Tipo", ["Planta Baixa", "Corte", "Fachada", "Situação"], key="tipo")
+        novos = st.file_uploader("Anexar PDFs", type=['pdf'], accept_multiple_files=True, key="val_pdf_upload")
+        tipo = st.selectbox("Tipo", ["Planta Baixa", "Corte", "Fachada", "Situação"], key="val_tipo_select")
 
-        if novos and st.button("💾 Salvar"):
+        if novos and st.button("💾 Salvar", key="val_pdf_save_btn"):
             for pdf in novos:
                 anexar_pdf_projeto(proc_id, pdf, tipo)
             st.success(f"✅ {len(novos)} PDF(s) anexado(s)!")
@@ -657,7 +593,7 @@ with tab3:
 
         st.divider()
 
-        if st.button("🔍 VALIDAR", key="btn_val", type="primary"):
+        if st.button("🔍 VALIDAR", key="val_validar_btn", type="primary"):
             with st.spinner("Analisando..."):
                 resultado = validar_processo(proc_id, leg_id)
 
@@ -684,7 +620,8 @@ with tab3:
                         pdf_rel,
                         f"relatorio_{resultado['numero_processo']}.pdf",
                         "application/pdf",
-                        type="primary"
+                        type="primary",
+                        key="val_rel_download_btn"
                     )
 
                 if resultado['violacoes']:
