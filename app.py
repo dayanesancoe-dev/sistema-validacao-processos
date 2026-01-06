@@ -16,7 +16,7 @@ st.title("🏛️ Sistema de Validação de Processos")
 st.markdown("**Prefeitura de Contagem** — Liberação de Alvarás de Construção")
 
 # Inicializar banco de dados
-import sqlite3
+ import sqlite3
 
 @st.cache_resource
 def init_db():
@@ -67,7 +67,6 @@ def init_db():
 
 # EXECUTA O BANCO AQUI (ANTES DE QUALQUER LISTAGEM)
 conn, cursor = init_db()
-
 
     # Criar tabelas
     cursor.execute('''
