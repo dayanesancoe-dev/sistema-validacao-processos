@@ -218,23 +218,44 @@ with tab1:
 with tab2:
     st.header("Gerenciar Legislações")
     col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("➕ Cadastrar Legislação")
-        nome_leg = st.text_input("Nome da legislação", placeholder="Ex: Lei de Uso e Ocupação do Solo")
-        desc_leg = st.text_area("Descrição", placeholder="Descrição da legislação")
-        if st.button("Cadastrar Legislação", key="btn_cadastrar_leg"):
-            if nome_leg and desc_leg:
-                cadastrar_legislacao(nome_leg, desc_leg)
-            else:
-                st.error("❌ Preencha todos os campos!")
-    with col2:
-        st.subheader("📚 Legislações Cadastradas")
-        legislacoes = listar_legislacoes()
-        if legislacoes:
-            df_leg = pd.DataFrame(legislacoes, columns=["ID", "Nome", "Descrição"])
-            st.dataframe(df_leg, use_container_width=True)
+  with col1:
+    st.subheader("➕ Cadastrar Legislação")
+    nome_leg = st.text_input("Nome da legislação", placeholder="Ex: Lei de Uso e Ocupação do Solo")
+    desc_leg = st.text_area("Descrição", placeholder="Descrição da legislação")
+
+    # ADICIONE ISSO:
+    pdf_file = st.file_uploader("📎 Anexar PDF da Lei", type=['pdf'], key="upload_pdf_leg")
+
+    if st.button("Cadastrar Legislação", key="btn_cadastrar_leg"):
+        if nome_leg and desc_leg:
+            cadastrar_legislacao(nome_leg, desc_leg, pdf_file)
         else:
-            st.info("Nenhuma legislação cadastrada ainda.")
+            st.error("❌ Preencha todos os campos!")
+def obter_pdf_legislacao(legislacao_id):
+    cursor.execute('SELECT pdf_nome, pdf_conteudo FROM legislacoes WHERE id = ?', (legislacao_id,))
+    resultado = cursor.fetchone()
+    return resultado if resultado else (None, None)
+
+    with col2:
+    st.subheader("📚 Legislações Cadastradas")
+    legislacoes = listar_legislacoes()
+    if legislacoes:
+        for leg in legislacoes:
+            col_a, col_b = st.columns([4, 1])
+            col_a.write(f"**ID {leg[0]}** - {leg[1]}")
+
+            # Verificar se tem PDF
+            pdf_nome, pdf_conteudo = obter_pdf_legislacao(leg[0])
+            if pdf_conteudo:
+                col_b.download_button(
+                    label="📄 PDF",
+                    data=pdf_conteudo,
+                    file_name=pdf_nome,
+                    mime="application/pdf",
+                    key=f"download_pdf_{leg[0]}"
+                )
+    else:
+        st.info("Nenhuma legislação cadastrada ainda.")
     st.divider()
     st.subheader("➕ Adicionar Regra a Legislação")
     legislacoes = listar_legislacoes()
