@@ -37,6 +37,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT UNIQUE NOT NULL,
             descricao TEXT,
+            pdf_nome TEXT,
+            pdf_conteudo BLOB,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -73,12 +75,20 @@ def listar_processos():
     cursor.execute('SELECT id, numero_processo, requerente, rt, uso, area_total, estatus FROM processos')
     processos = cursor.fetchall()
     return processos
-def cadastrar_legislacao(nome, descricao):
+def cadastrar_legislacao(nome, descricao, pdf_file=None):
     try:
-        cursor.execute('''
-            INSERT INTO legislacoes (nome, descricao)
-            VALUES (?, ?)
-        ''', (nome, descricao))
+        if pdf_file:
+            pdf_bytes = pdf_file.read()
+            pdf_nome = pdf_file.name
+            cursor.execute('''
+                INSERT INTO legislacoes (nome, descricao, pdf_nome, pdf_conteudo)
+                VALUES (?, ?, ?, ?)
+            ''', (nome, descricao, pdf_nome, pdf_bytes))
+        else:
+            cursor.execute('''
+                INSERT INTO legislacoes (nome, descricao)
+                VALUES (?, ?)
+            ''', (nome, descricao))
         conn.commit()
         st.success(f"✅ Legislação '{nome}' cadastrada com sucesso!")
         return True
