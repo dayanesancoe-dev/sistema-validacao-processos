@@ -48,7 +48,6 @@ def init_db():
         )''')
         
         # === CORREÇÃO FORÇADA DE NOMES DE SETORES ANTIGOS ===
-        # Garante que "Pró-análise" vire "Pré-análise" automaticamente
         updates = [
             "UPDATE tramitacao SET setor = 'Pré-análise' WHERE setor = 'Pró-análise'",
             "UPDATE tramitacao SET setor = 'Pré-análise' WHERE setor = 'Pró-Análise'",
@@ -144,7 +143,7 @@ def main():
                     st.download_button("📜 Histórico Completo", csv_hist, "historico.csv", "text/csv")
             except: pass
 
-        # 2. Backup do Arquivo .DB (NOVO)
+        # 2. Backup do Arquivo .DB
         if os.path.exists("processos.db"):
             with open("processos.db", "rb") as f:
                 st.sidebar.download_button(
@@ -245,10 +244,8 @@ def main():
 
                 st.markdown("**Datas:**")
                 c3, c4 = st.columns(2)
-                
                 with c3:
                     dt_ent = st.date_input("📅 Data de Entrada", value=date.today())
-                
                 with c4:
                     tem_saida = st.checkbox("Informar Data de Saída?")
                     if tem_saida:
@@ -276,27 +273,25 @@ def main():
                 rows = res.fetchall()
                 if rows:
                     df = pd.DataFrame(rows, columns=['ID', 'PID', 'Setor', 'Entrada', 'Saída', 'Obs'])
-                    
                     df['Setor'] = df['Setor'].replace({'Pró-análise': 'Pré-análise', 'Pró-Análise': 'Pré-análise', 'Pro-analise': 'Pré-análise'})
-                    
                     df['Entrada'] = pd.to_datetime(df['Entrada'])
                     df['Saída'] = pd.to_datetime(df['Saída'])
                     now = pd.Timestamp.now().normalize()
                     df['Dias'] = df.apply(lambda x: ((x['Saída'] if pd.notnull(x['Saída']) else now) - x['Entrada']).days, axis=1)
                     
-                    # Tabela Resumo
+                    # Resumo
                     st.subheader("📊 Total de Dias por Setor")
                     df_resumo = df.groupby('Setor')['Dias'].sum().reset_index().sort_values('Dias', ascending=False)
                     st.dataframe(df_resumo, use_container_width=True)
                     
-                    # Tabela Detalhada
+                    # Detalhado
                     st.subheader("📜 Histórico Detalhado")
                     df_show = df.copy()
                     df_show['Entrada'] = df_show['Entrada'].dt.strftime('%d/%m/%Y')
                     df_show['Saída'] = df_show['Saída'].dt.strftime('%d/%m/%Y').fillna("Atual")
                     st.dataframe(df_show[['Setor', 'Entrada', 'Saída', 'Dias', 'Obs']], use_container_width=True)
                     
-                    # --- EDIÇÃO DO HISTÓRICO ---
+                    # --- EDIÇÃO ---
                     st.divider()
                     st.subheader("📝 Editar Histórico")
                     opts_t = {f"{r[2]} ({pd.to_datetime(r[3]).strftime('%d/%m/%Y')})": r[0] for r in rows}
@@ -308,7 +303,6 @@ def main():
                         if r:
                             with st.form(f"edit_tram_{tid}"):
                                 ec1, ec2 = st.columns(2)
-                                
                                 cur_sector = r[2]
                                 if cur_sector in ['Pró-análise', 'Pró-Análise']: cur_sector = 'Pré-análise'
                                 idx_setor = setores.index(cur_sector) if cur_sector in setores else 0
@@ -357,24 +351,62 @@ def main():
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
                                 st.rerun()
 
-    # --- ABA 5: IA ---
+    # --- ABA 5: IA (UPDATED: MULTIPLE FILES) ---
     with tab5:
         st.header("Análise IA")
         if not api_key: st.warning("Sem API Key.")
         elif procs:
             pid_ia = opcoes[st.selectbox("Processo:", list(opcoes.keys()), key="ia_sel")]
             d_ia = buscar_processo(pid_ia)
-            up_p = st.file_uploader("Projeto (PDF)", type='pdf')
-            up_l = st.file_uploader("Lei (PDF)", type='pdf')
+            
+            # ATENÇÃO: Agora aceita múltiplos arquivos
+            up_p = st.file_uploader("Projeto (Arquitetônico/Pranchas)", type='pdf', accept_multiple_files=True)
+            up_l = st.file_uploader("Lei (Legislação Municipal)", type='pdf', accept_multiple_files=True)
+            
             if st.button("Analisar") and up_p and up_l:
                 with st.spinner("Analisando..."):
                     try:
-                        tp = PyPDF2.PdfReader(up_p).pages[0].extract_text()
-                        tl = PyPDF2.PdfReader(up_l).pages[0].extract_text()
-                        mod = genai.GenerativeModel('gemini-1.5-flash')
-                        res = mod.generate_content(f"Analise {d_ia[1]} vs Lei.\nLei: {tl[:3000]}\nProj: {tp[:3000]}")
+                        # Extrai texto de TODOS os PDFs do Projeto
+                        txt_p = ""
+                        for p_file in up_p:
+                            reader = PyPDF2.PdfReader(p_file)
+                            for page in reader.pages:
+                                txt_p += page.extract_text() or ""
+                        
+                        # Extrai texto de TODOS os PDFs da Lei
+                        txt_l = ""
+                        for l_file in up_l:
+                            reader = PyPDF2.PdfReader(l_file)
+                            for page in reader.pages:
+                                txt_l += page.extract_text() or ""
+                        
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        
+                        # Limita o tamanho do texto para não estourar o limite de tokens (aprox. 15k caracteres de cada)
+                        res = model.generate_content(f"""
+                        Você é um analista experiente. Analise se o projeto abaixo cumpre a legislação fornecida.
+                        
+                        DADOS DO PROCESSO:
+                        - Requerente: {d_ia[3]}
+                        - Uso: {d_ia[5]}
+                        - Tipologia: {d_ia[6]}
+                        - Área: {d_ia[7]}m²
+
+                        LEGISLAÇÃO (Trecho):
+                        {txt_l[:20000]}
+
+                        PROJETO (Conteúdo extraído):
+                        {txt_p[:20000]}
+                        
+                        Responda com:
+                        1. Resumo do Projeto
+                        2. Itens em Conformidade
+                        3. Itens em Desacordo (Se houver)
+                        4. Conclusão (Aprovado ou Reprovado)
+                        """)
+                        
                         st.markdown(res.text)
-                    except Exception as e: st.error(e)
+                    except Exception as e: st.error(f"Erro na análise: {e}")
 
     # --- ABA 6: DASHBOARD ---
     with tab6:
