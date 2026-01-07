@@ -369,4 +369,67 @@ def main():
                     try:
                         txt_p = ""
                         for p_file in up_p:
-                            reader = PyPDF2.PdfReader
+                            reader = PyPDF2.PdfReader(p_file)
+                            for page in reader.pages: txt_p += page.extract_text() or ""
+                        
+                        txt_l = ""
+                        for l_file in up_l:
+                            reader = PyPDF2.PdfReader(l_file)
+                            for page in reader.pages: txt_l += page.extract_text() or ""
+                        
+                        # PRIORIZA O MODELO PRO (MELHOR RACIOCÍNIO)
+                        modelos = [
+                            'gemini-1.5-pro',        # Tenta o PRO primeiro
+                            'models/gemini-1.5-pro',
+                            'gemini-2.0-flash',      # Fallback para o Flash 2.0 (Muito rápido)
+                            'models/gemini-2.0-flash',
+                            'gemini-1.5-flash'       # Fallback final
+                        ]
+                        
+                        resultado = None
+                        
+                        for m_nome in modelos:
+                            try:
+                                model = genai.GenerativeModel(m_nome)
+                                resultado = model.generate_content(f"""
+                                Você é um analista experiente. Analise se o projeto cumpre a legislação.
+                                DADOS: {d_ia[3]}, {d_ia[5]}, {d_ia[7]}m²
+                                LEI: {txt_l[:20000]}
+                                PROJETO: {txt_p[:20000]}
+                                Responda com: 1. Resumo, 2. Conformidade, 3. Desacordo, 4. Conclusão.
+                                """)
+                                st.success(f"Análise feita com: {m_nome}")
+                                break
+                            except: continue
+                        
+                        if resultado:
+                            st.markdown(resultado.text)
+                        else:
+                            st.error("Erro na conexão com IA. Verifique API Key e requirements.txt")
+                            with st.expander("Debug"):
+                                try:
+                                    for m in genai.list_models(): st.write(m.name)
+                                except Exception as e: st.write(e)
+
+                    except Exception as e: st.error(f"Erro geral: {e}")
+
+    # --- ABA 6: DASHBOARD ---
+    with tab6:
+        st.header("Dashboard")
+        if pd is not None and px is not None:
+            df = get_processos_df()
+            if not df.empty:
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Total", len(df))
+                c2.metric("Área Total", f"{df['area'].sum():,.0f} m²")
+                c3.metric("Aprovados", len(df[df['status']=='Aprovado']))
+                dias = (pd.Timestamp.now() - df['data_protocolo']).dt.days.mean()
+                c4.metric("Média Dias", f"{dias:.0f}")
+                
+                st.divider()
+                g1, g2 = st.columns(2)
+                g1.plotly_chart(px.pie(df, names='status', title='Status'), use_container_width=True)
+                g2.plotly_chart(px.bar(df['uso'].value_counts().reset_index(), x='count', y='uso', orientation='h', title='Uso'), use_container_width=True)
+
+if __name__ == "__main__":
+    main()
