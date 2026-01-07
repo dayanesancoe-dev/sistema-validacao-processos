@@ -74,6 +74,18 @@ def buscar_processo(numero_ou_id):
     suc, res = executar_query(query, (numero_ou_id,))
     return res.fetchone() if suc else None
 
+def get_processos_df():
+    """Retorna um DataFrame pandas com todos os processos para análise gráfica"""
+    if not conn: return pd.DataFrame()
+    try:
+        df = pd.read_sql_query("SELECT * FROM processos", conn)
+        # Converter colunas de data
+        df['data_protocolo'] = pd.to_datetime(df['data_protocolo'], errors='coerce')
+        df['data_cadastro'] = pd.to_datetime(df['data_cadastro'], errors='coerce')
+        return df
+    except Exception:
+        return pd.DataFrame()
+
 # ==================== INTERFACE PRINCIPAL ====================
 
 def main():
@@ -107,12 +119,12 @@ def main():
     if api_key: genai.configure(api_key=api_key)
 
     # --- ABAS ---
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA"])
+    # ADICIONEI "📈 Dashboard" (Gráficos) DE VOLTA
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA", "📈 Dashboard"])
 
     # Listas Padronizadas
     usos_options = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
     tipologias_options = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
-    # LISTA ATUALIZADA DE SETORES
     setores_tramitacao = [
         "Análise prévia", 
         "Pró-análise", 
@@ -196,68 +208,43 @@ def main():
                         st.session_state[f'confirm_del_{id_selecionado}'] = False
                         st.rerun()
 
-    # ABA 3: TRAMITAÇÃO (ATUALIZADA COM DIAS)
+    # ABA 3: TRAMITAÇÃO
     with tab3:
         st.header("Tramitação")
         if procs:
             sel_tram_key = st.selectbox("Processo:", list(opcoes.keys()), key="sel_tram")
             pid_tram = opcoes[sel_tram_key]
             
-            # --- FORMULÁRIO DE NOVA MOVIMENTAÇÃO ---
             with st.form("nova_tram"):
                 st.subheader("Nova Movimentação")
                 c1, c2 = st.columns(2)
-                # Agora usa a lista fixa de setores
-                setor = c1.selectbox("Para qual setor o processo vai?", setores_tramitacao)
-                dt_ent = c1.date_input("Data de Entrada no Setor", value=date.today())
+                setor = c1.selectbox("Setor Destino", setores_tramitacao)
+                dt_ent = c1.date_input("Data Entrada", value=date.today())
                 obs = c2.text_area("Observação")
                 
-                st.caption("ℹ️ Ao movimentar, o sistema fechará automaticamente a permanência no setor anterior.")
-                
-                if st.form_submit_button("Movimentar Processo"):
-                    # 1. Fecha o setor anterior (define data_saida como a data da nova entrada)
+                if st.form_submit_button("Movimentar"):
                     executar_query("UPDATE tramitacao SET data_saida=? WHERE processo_id=? AND data_saida IS NULL", 
                                  (dt_ent.strftime('%Y-%m-%d'), pid_tram), commit=True)
-                    # 2. Cria o novo registro
                     executar_query("INSERT INTO tramitacao (processo_id, setor, data_entrada, observacao) VALUES (?,?,?,?)",
                                  (pid_tram, setor, dt_ent.strftime('%Y-%m-%d'), obs), commit=True)
-                    st.success("Processo movimentado com sucesso!")
+                    st.success("Movimentado!")
                     st.rerun()
             
-            # --- TABELA DE HISTÓRICO COM CÁLCULO DE DIAS ---
             st.divider()
-            st.subheader("Histórico de Movimentações")
             suc, res = executar_query("SELECT * FROM tramitacao WHERE processo_id=? ORDER BY data_entrada DESC", (pid_tram,))
-            
             if suc:
                 trams = res.fetchall()
                 if trams:
-                    # Cria DataFrame
                     df = pd.DataFrame(trams, columns=['ID', 'PID', 'Setor', 'Entrada', 'Saída', 'Obs'])
-                    
-                    # Converte colunas de data para datetime
                     df['Entrada'] = pd.to_datetime(df['Entrada'])
                     df['Saída'] = pd.to_datetime(df['Saída'])
-                    
-                    # CÁLCULO DE DIAS
-                    # Se tiver data de saída: Saída - Entrada. Se não (ainda está lá): Hoje - Entrada.
                     hoje = pd.Timestamp.now().normalize()
-                    
-                    def calcular_dias(row):
-                        inicio = row['Entrada']
-                        fim = row['Saída'] if pd.notnull(row['Saída']) else hoje
-                        return (fim - inicio).days
-
-                    df['Dias no Setor'] = df.apply(calcular_dias, axis=1)
-                    
-                    # Formata as datas para exibir bonitinho (sem hora) e remove NaN
+                    df['Dias'] = df.apply(lambda row: ((row['Saída'] if pd.notnull(row['Saída']) else hoje) - row['Entrada']).days, axis=1)
                     df['Entrada'] = df['Entrada'].dt.strftime('%d/%m/%Y')
                     df['Saída'] = df['Saída'].dt.strftime('%d/%m/%Y').fillna("Atual")
-                    
-                    # Remove colunas técnicas (ID e PID) para exibição
-                    st.dataframe(df[['Setor', 'Entrada', 'Saída', 'Dias no Setor', 'Obs']], use_container_width=True)
+                    st.dataframe(df[['Setor', 'Entrada', 'Saída', 'Dias', 'Obs']], use_container_width=True)
                 else:
-                    st.info("Nenhuma tramitação registrada.")
+                    st.info("Sem histórico.")
 
     # ABA 4: KANBAN
     with tab4:
@@ -282,27 +269,96 @@ def main():
     with tab5:
         st.header("Análise IA")
         if not api_key:
-            st.warning("Configure a API Key na barra lateral.")
+            st.warning("Insira API Key.")
         elif procs:
-            sel_ia_key = st.selectbox("Processo para Análise:", list(opcoes.keys()), key="sel_ia")
+            sel_ia_key = st.selectbox("Processo:", list(opcoes.keys()), key="sel_ia")
             pid_ia = opcoes[sel_ia_key]
             d_ia = buscar_processo(pid_ia)
-            
             upload_proj = st.file_uploader("PDF Projeto", type='pdf')
             upload_lei = st.file_uploader("PDF Lei", type='pdf')
             
             if st.button("Analisar") and upload_proj and upload_lei:
-                with st.spinner("Lendo documentos..."):
+                with st.spinner("Analisando..."):
                     try:
                         txt_p = PyPDF2.PdfReader(upload_proj).pages[0].extract_text()
                         txt_l = PyPDF2.PdfReader(upload_lei).pages[0].extract_text()
-                        
                         model = genai.GenerativeModel('gemini-1.5-flash')
-                        prompt = f"Analise se o projeto {d_ia[1]} cumpre a lei.\nLEI: {txt_l[:2000]}\nPROJETO: {txt_p[:2000]}"
-                        res = model.generate_content(prompt)
+                        res = model.generate_content(f"Analise projeto {d_ia[1]} vs Lei.\nLei: {txt_l[:2000]}\nProj: {txt_p[:2000]}")
                         st.markdown(res.text)
-                    except Exception as e:
-                        st.error(f"Erro IA: {e}")
+                    except Exception as e: st.error(f"Erro: {e}")
+
+    # ABA 6: DASHBOARD (POWER BI STYLE)
+    with tab6:
+        st.header("📈 Dashboard Gerencial")
+        
+        if pd is None or px is None:
+            st.error("Bibliotecas de gráficos não encontradas.")
+        else:
+            df_dash = get_processos_df()
+            
+            if not df_dash.empty:
+                # --- KPI CARDS (Indicadores no topo) ---
+                col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
+                
+                total_procs = len(df_dash)
+                area_total = df_dash['area'].sum()
+                procs_aprovados = len(df_dash[df_dash['status'] == 'Aprovado'])
+                
+                # Cálculo simples de média de dias (data protocolo até hoje)
+                hoje = pd.Timestamp.now()
+                df_dash['dias_corridos'] = (hoje - df_dash['data_protocolo']).dt.days
+                media_dias = df_dash['dias_corridos'].mean()
+
+                col_kpi1.metric("Total Processos", total_procs)
+                col_kpi2.metric("Área Total (m²)", f"{area_total:,.2f}")
+                col_kpi3.metric("Aprovados", procs_aprovados)
+                col_kpi4.metric("Média Dias (Geral)", f"{media_dias:.0f}")
+
+                st.markdown("---")
+
+                # --- LINHA 1 DE GRÁFICOS ---
+                g1, g2 = st.columns(2)
+                
+                with g1:
+                    # Gráfico de Rosca (Donut Chart) para Status
+                    df_status = df_dash['status'].value_counts().reset_index()
+                    df_status.columns = ['Status', 'Qtd']
+                    fig_status = px.pie(df_status, values='Qtd', names='Status', hole=0.4, 
+                                      title='Distribuição por Status', color_discrete_sequence=px.colors.qualitative.Pastel)
+                    st.plotly_chart(fig_status, use_container_width=True)
+                
+                with g2:
+                    # Gráfico de Barras para Tipologia
+                    df_tipo = df_dash['tipologia'].value_counts().reset_index()
+                    df_tipo.columns = ['Tipologia', 'Qtd']
+                    fig_tipo = px.bar(df_tipo, x='Qtd', y='Tipologia', orientation='h', 
+                                    title='Processos por Tipologia', text='Qtd', color='Tipologia')
+                    st.plotly_chart(fig_tipo, use_container_width=True)
+
+                # --- LINHA 2 DE GRÁFICOS ---
+                g3, g4 = st.columns(2)
+
+                with g3:
+                    # Treemap de Uso (Muito usado em Power BI)
+                    df_uso = df_dash.groupby('uso')['area'].sum().reset_index()
+                    fig_uso = px.treemap(df_uso, path=['uso'], values='area', 
+                                       title='Área Total por Uso (Mapa de Árvore)')
+                    st.plotly_chart(fig_uso, use_container_width=True)
+
+                with g4:
+                    # Gráfico de Linha Temporal (Evolução)
+                    if 'data_protocolo' in df_dash.columns:
+                        df_time = df_dash.groupby(df_dash['data_protocolo'].dt.to_period('M').astype(str)).size().reset_index(name='Qtd')
+                        fig_time = px.area(df_time, x='data_protocolo', y='Qtd', 
+                                         title='Evolução de Protocolos (Mensal)', markers=True)
+                        st.plotly_chart(fig_time, use_container_width=True)
+                
+                # Tabela detalhada no final
+                with st.expander("Ver Dados Brutos"):
+                    st.dataframe(df_dash)
+
+            else:
+                st.info("Nenhum dado disponível para gerar o dashboard. Cadastre processos na aba 'Novo'.")
 
 if __name__ == "__main__":
     main()
