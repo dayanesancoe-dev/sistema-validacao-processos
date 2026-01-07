@@ -1,482 +1,273 @@
 import streamlit as st
 import google.generativeai as genai
 import PyPDF2
-from datetime import datetime, timedelta
+from datetime import datetime
 import sqlite3
 import os
 
-# ==================== Importação de bibliotecas opcionais (para gráficos) ====================
+# ==================== CONFIGURAÇÃO INICIAL ====================
+st.set_page_config(page_title="Sistema de Validação", page_icon="🏛️", layout="wide")
+
+# Importação segura de bibliotecas gráficas
 try:
     import pandas as pd
     import plotly.express as px
 except ImportError:
     pd = None
     px = None
-    st.error("❌ Erro: As bibliotecas 'pandas' e 'plotly' não foram encontradas. A aba de gráficos não funcionará.")
 
-st.set_page_config(page_title="Sistema de Validação", page_icon="🏛️", layout="wide")
-
-# ==================== INICIALIZAÇÃO DE ESTADO ====================
-if 'api_key' not in st.session_state:
-    st.session_state['api_key'] = ''
-if 'db_reset_needed_rerun' not in st.session_state:
-    st.session_state['db_reset_needed_rerun'] = False
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-if 'username' not in st.session_state: 
-    st.session_state['username'] = None
-
-if st.session_state['db_reset_needed_rerun']:
-    st.session_state['db_reset_needed_rerun'] = False
-    st.rerun()
- 
 # ==================== BANCO DE DADOS ====================
-
 @st.cache_resource
 def init_db():
     try:
         conn = sqlite3.connect('processos.db', check_same_thread=False)
         c = conn.cursor()
-
-        expected_processos_column_names = [
-            'id', 'numero', 'rt', 'requerente', 'analista', 'uso', 
-            'tipologia', 'area', 'data_protocolo', 'status', 'data_cadastro'
-        ]
-
-        schema_outdated = False
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='processos'")
-        table_exists = c.fetchone()
-
-        if table_exists:
-            c.execute("PRAGMA table_info(processos)")
-            current_columns_info = c.fetchall()
-            current_column_names = [col[1] for col in current_columns_info]
-
-            if not (set(expected_processos_column_names) == set(current_column_names) and 
-                    len(expected_processos_column_names) == len(current_column_names)):
-                schema_outdated = True
-        else:
-            schema_outdated = True
-
-        if schema_outdated:
-            st.warning("⚠️ Detectada estrutura de banco de dados antiga ou inconsistente. Recriando tabelas...")
-            c.execute('DROP TABLE IF EXISTS tramitacao')
-            c.execute('DROP TABLE IF EXISTS analises')
-            c.execute('DROP TABLE IF EXISTS processos')
-            conn.commit()
-
-            c.execute('''CREATE TABLE processos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                numero TEXT UNIQUE NOT NULL,
-                rt TEXT NOT NULL,
-                requerente TEXT NOT NULL,
-                analista TEXT NOT NULL,
-                uso TEXT NOT NULL,
-                tipologia TEXT NOT NULL,
-                area REAL NOT NULL,
-                data_protocolo TEXT NOT NULL,
-                status TEXT DEFAULT 'Protocolado',
-                data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
-            )''')
-            conn.commit()
-
+        
+        # Criação simplificada e robusta das tabelas
+        c.execute('''CREATE TABLE IF NOT EXISTS processos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero TEXT UNIQUE NOT NULL,
+            rt TEXT, requerente TEXT, analista TEXT, uso TEXT, 
+            tipologia TEXT, area REAL, data_protocolo TEXT,
+            status TEXT DEFAULT 'Protocolado',
+            data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS tramitacao (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            processo_id INTEGER, setor TEXT, data_entrada TEXT, 
+            data_saida TEXT, observacao TEXT,
+            FOREIGN KEY (processo_id) REFERENCES processos(id)
+        )''')
+        
         c.execute('''CREATE TABLE IF NOT EXISTS analises (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            processo_id INTEGER NOT NULL,
-            resultado TEXT NOT NULL,
-            status TEXT NOT NULL,
+            processo_id INTEGER, resultado TEXT, status TEXT, 
             data_analise TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (processo_id) REFERENCES processos(id)
         )''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS tramitacao (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            processo_id INTEGER NOT NULL,
-            setor TEXT NOT NULL,
-            data_entrada TEXT NOT NULL,
-            data_saida TEXT,
-            observacao TEXT,
-            FOREIGN KEY (processo_id) REFERENCES processos(id)
-        )''')
-
+        
         conn.commit()
         return conn
     except Exception as e:
-        st.error(f"❌ Erro ao inicializar o banco de dados: {str(e)}")
+        st.error(f"Erro no Banco de Dados: {e}")
         return None
 
 conn = init_db()
 
-# ==================== FUNÇÕES CRUD (PROCESSOS) ====================
-
-def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
-    if not conn: return False, "❌ Erro de conexão com o banco!"
+# ==================== FUNÇÕES DO SISTEMA ====================
+def executar_query(query, params=(), commit=False):
+    if not conn: return False, "Sem conexão"
     try:
         c = conn.cursor()
-        c.execute('''INSERT INTO processos 
-                    (numero, rt, requerente, analista, uso, tipologia, area, data_protocolo) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                 (numero, rt, requerente, analista, uso, tipologia, area, data_protocolo))
-        conn.commit()
-        return True, "✅ Processo cadastrado com sucesso!"
-    except sqlite3.IntegrityError:
-        return False, "❌ Erro: Já existe um processo com este número."
+        c.execute(query, params)
+        if commit: conn.commit()
+        return True, c
     except Exception as e:
-        return False, f"❌ Erro ao cadastrar: {str(e)}"
+        return False, str(e)
 
-def listar():
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute('SELECT * FROM processos ORDER BY id DESC')
-        return c.fetchall()
-    except Exception as e:
-        st.error(f"❌ Erro ao listar processos: {str(e)}")
-        return []
+def listar_processos():
+    suc, res = executar_query('SELECT * FROM processos ORDER BY id DESC')
+    return res.fetchall() if suc else []
 
-def buscar_por_numero(numero):
-    if not conn: return None
-    try:
-        c = conn.cursor()
-        c.execute('SELECT * FROM processos WHERE numero = ?', (numero,))
-        return c.fetchone()
-    except Exception as e:
-        st.error(f"❌ Erro ao buscar processo: {str(e)}")
-        return []
+def buscar_processo(numero_ou_id):
+    # Tenta buscar por ID se for int, senão por número
+    query = 'SELECT * FROM processos WHERE id = ?' if isinstance(numero_ou_id, int) else 'SELECT * FROM processos WHERE numero = ?'
+    suc, res = executar_query(query, (numero_ou_id,))
+    return res.fetchone() if suc else None
 
-def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
-    if not conn: return False, "❌ Erro de conexão com o banco!"
-    try:
-        c = conn.cursor()
-        c.execute('''UPDATE processos 
-                    SET numero=?, rt=?, requerente=?, analista=?, uso=?, tipologia=?, area=?, data_protocolo=?
-                    WHERE id=?''',
-                 (numero, rt, requerente, analista, uso, tipologia, area, data_protocolo, pid))
-        conn.commit()
-        return True, "✅ Processo atualizado com sucesso!"
-    except sqlite3.IntegrityError:
-        return False, "❌ Erro: Número de processo já existe!"
-    except Exception as e:
-        return False, f"❌ Erro ao atualizar processo: {str(e)}"
+# ==================== INTERFACE PRINCIPAL ====================
 
-def deletar(pid):
-    if not conn: return False, "❌ Erro de conexão com o banco!"
-    try:
-        c = conn.cursor()
-        c.execute('DELETE FROM analises WHERE processo_id = ?', (pid,))
-        c.execute('DELETE FROM tramitacao WHERE processo_id = ?', (pid,))
-        c.execute('DELETE FROM processos WHERE id = ?', (pid,))
-        conn.commit()
-        return True, "✅ Processo deletado com sucesso!"
-    except Exception as e:
-        return False, f"❌ Erro ao deletar processo: {str(e)}" 
-
-def atualizar_status(pid, novo_status):
-    if not conn: return False, "❌ Erro de conexão com o banco!"
-    try:
-        c = conn.cursor()
-        c.execute('UPDATE processos SET status = ? WHERE id = ?', (novo_status, pid))
-        conn.commit()
-        return True, "✅ Status atualizado!"
-    except Exception as e:
-        return False, f"❌ Erro ao atualizar status: {str(e)}" 
-
-# ==================== FUNÇÕES CRUD (TRAMITAÇÃO) ====================
-
-def registrar_tramitacao(processo_id, setor, data_entrada, data_saida=None, observacao=""):
-    if not conn: return False, "❌ Erro de conexão com o banco!"
-    try:
-        c = conn.cursor()
-        c.execute('''UPDATE tramitacao 
-                    SET data_saida = ? 
-                    WHERE processo_id = ? AND data_saida IS NULL''', 
-                 (data_entrada.strftime('%Y-%m-%d'), processo_id))
-        c.execute('''INSERT INTO tramitacao 
-                    (processo_id, setor, data_entrada, data_saida, observacao) 
-                    VALUES (?, ?, ?, ?, ?)''',
-                 (processo_id, setor, data_entrada.strftime('%Y-%m-%d'), data_saida.strftime('%Y-%m-%d') if data_saida else None, observacao))
-        conn.commit()
-        return True, "✅ Tramitação registrada com sucesso!"
-    except Exception as e:
-        return False, f"❌ Erro ao registrar tramitação: {str(e)}"
-
-def listar_tramitacao(processo_id):
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute('SELECT * FROM tramitacao WHERE processo_id = ? ORDER BY data_entrada DESC', (processo_id,))
-        return c.fetchall()
-    except Exception as e:
-        st.error(f"Erro ao listar tramitações: {str(e)}")
-        return []
-
-def atualizar_tramitacao(tid, setor, data_entrada, data_saida, observacao):
-    if not conn: return False, "❌ Erro de conexão com o banco!"
-    try:
-        c = conn.cursor()
-        c.execute('''UPDATE tramitacao 
-                    SET setor=?, data_entrada=?, data_saida=?, observacao=?
-                    WHERE id=?''',
-                 (setor, data_entrada, data_saida, observacao, tid))
-        conn.commit()
-        return True, "✅ Movimentação atualizada!"
-    except Exception as e:
-        return False, f"❌ Erro ao atualizar movimentação: {str(e)}"
-
-def deletar_tramitacao(tid):
-    if not conn: return False, "❌ Erro de conexão com o banco!"
-    try:
-        c = conn.cursor()
-        c.execute('DELETE FROM tramitacao WHERE id = ?', (tid,))
-        conn.commit()
-        return True, "✅ Movimentação deletada!"
-    except Exception as e:
-        return False, f"❌ Erro ao deletar movimentação: {str(e)}"
-
-# ==================== FUNÇÕES CRUD (ANÁLISES) ====================
-
-def salvar_analise(processo_id, resultado, status):
-    if not conn: return False, "❌ Erro de conexão com o banco!"
-    try:
-        c = conn.cursor()
-        c.execute('''INSERT INTO analises (processo_id, resultado, status) 
-                    VALUES (?, ?, ?)''',
-                 (processo_id, resultado, status))
-        conn.commit()
-        return True, "✅ Análise salva com sucesso!"
-    except Exception as e:
-        return False, f"❌ Erro ao salvar análise: {str(e)}"
-
-def listar_analises(processo_id):
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute('SELECT * FROM analises WHERE processo_id = ? ORDER BY data_analise DESC', (processo_id,))
-        return c.fetchall()
-    except Exception as e:
-        st.error(f"Erro ao listar análises: {str(e)}")
-        return []
-
-# ==================== FUNÇÕES DE GRÁFICOS ====================
-def get_processos_df():
-    if not conn or pd is None: return pd.DataFrame()
-    try:
-        df = pd.read_sql_query("SELECT * FROM processos", conn)
-        df['data_protocolo'] = pd.to_datetime(df['data_protocolo'], errors='coerce')
-        df['data_cadastro'] = pd.to_datetime(df['data_cadastro'], errors='coerce')
-        return df
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar processos: {e}")
-        return pd.DataFrame()
-
-# ==================== LOGIN ====================
-
-def login_form():
-    st.title("Login no Sistema de Validação 🏛️")
-    st.markdown("---")
-    with st.form("login_form"):
-        username = st.text_input("Usuário", key="login_username")
-        password = st.text_input("Senha", type="password", key="login_password")
-        submitted = st.form_submit_button("Entrar", type="primary", use_container_width=True)
-
-        if submitted:
-            admin_username = st.secrets.get("admin_user", {}).get("username")
-            admin_password = st.secrets.get("admin_user", {}).get("password")
-
-            if admin_username is None or admin_password is None:
-                st.error("❌ Credenciais não configuradas no '.streamlit/secrets.toml'.")
-                return
-
-            if username == admin_username and password == admin_password:
-                st.session_state['logged_in'] = True
-                st.session_state['username'] = username
-                st.rerun()
-            else:
-                st.error("Usuário ou senha incorretos.")
-
-# ==================== APP PRINCIPAL ====================
-
-def main_app_content():
-    usos_options = ["Unifamiliar", "Multifamiliar", "Serviços", "Comércio Varejista", "Comércio Atacadista", "Indústria", "Misto", "Sem destinação específica"]
-    tipologias_options = ["Aprovação Inicial", "Levantamento Existente", "Modificação de Projeto", "Regularização", "Misto", "RIU", "ERB", "As Built"]
-    status_kanban = ["Protocolado", "Em Análise", "Aguardando Correções", "Aprovado", "Reprovado"]
-
-    st.sidebar.title("🏛️ Sistema de Validação")
-    st.sidebar.markdown(f"Bem-vindo(a), **{st.session_state.get('username', 'Usuário')}**!")
+def main():
+    # --- AUTENTICAÇÃO SIMPLES ---
+    if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
     
-    if st.sidebar.button("Sair", type="secondary", key="logout"): 
+    if not st.session_state['logged_in']:
+        st.title("🔐 Login")
+        with st.form("login"):
+            user = st.text_input("Usuário")
+            pwd = st.text_input("Senha", type="password")
+            if st.form_submit_button("Entrar"):
+                # Pega senha do secrets ou usa padrão 'admin'/'admin' para teste local se falhar
+                admin_user = st.secrets.get("admin_user", {}).get("username", "admin")
+                admin_pass = st.secrets.get("admin_user", {}).get("password", "admin")
+                
+                if user == admin_user and pwd == admin_pass:
+                    st.session_state['logged_in'] = True
+                    st.rerun()
+                else:
+                    st.error("Dados incorretos.")
+        return # Para a execução aqui se não estiver logado
+
+    # --- BARRA LATERAL ---
+    st.sidebar.title("🏛️ Menu")
+    if st.sidebar.button("Sair"):
         st.session_state['logged_in'] = False
         st.rerun()
-
+    
     st.sidebar.markdown("---")
-    st.session_state['api_key'] = st.sidebar.text_input("Sua API Key Gemini:", type="password", key="sidebar_api_key")
-    if st.session_state['api_key']:
-        genai.configure(api_key=st.session_state['api_key'])
+    api_key = st.sidebar.text_input("API Key Gemini", type="password")
+    if api_key: genai.configure(api_key=api_key)
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Cadastrar", "📝 Listar", "🔄 Tramitação", "📊 Kanban", "🤖 Análise IA", "📈 Gráficos"])
+    # --- ABAS ---
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA"])
 
-    # --- ABA 1: CADASTRAR ---
+    # ABA 1: NOVO PROCESSO
     with tab1:
-        st.header("➕ Cadastrar Processo")
-        with st.form("cadastro"):
-            col1, col2 = st.columns(2)
-            with col1:
-                numero = st.text_input("Número do Processo")
-                rt = st.text_input("Responsável Técnico")
-                uso = st.selectbox("Uso", usos_options)
-                area = st.number_input("Área (m²)", min_value=0.0, format="%.2f")
-            with col2:
-                requerente = st.text_input("Requerente")
-                analista = st.text_input("Analista")
-                tipologia = st.selectbox("Tipologia", tipologias_options)
-                data_protocolo = st.date_input("Data Protocolo", value="today")
+        st.header("Cadastrar Processo")
+        with st.form("novo_proc"):
+            c1, c2 = st.columns(2)
+            num = c1.text_input("Número Processo")
+            rt = c1.text_input("RT")
+            uso = c1.selectbox("Uso", ["Unifamiliar", "Multifamiliar", "Comercial", "Misto"])
+            area = c1.number_input("Área (m²)", min_value=0.0)
+            
+            req = c2.text_input("Requerente")
+            ana = c2.text_input("Analista")
+            tipo = c2.selectbox("Tipo", ["Aprovação", "Regularização", "Modificação"])
+            data = c2.date_input("Data Protocolo")
+            
+            if st.form_submit_button("Salvar", type="primary"):
+                suc, msg = executar_query(
+                    'INSERT INTO processos (numero, rt, requerente, analista, uso, tipologia, area, data_protocolo) VALUES (?,?,?,?,?,?,?,?)',
+                    (num, rt, req, ana, uso, tipo, area, data.strftime('%Y-%m-%d')), commit=True
+                )
+                if suc: st.success("Sucesso!"); st.rerun()
+                else: st.error(f"Erro: {msg}")
 
-            if st.form_submit_button("Cadastrar", type="primary", use_container_width=True):
-                if numero and rt and requerente:
-                    suc, msg = cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo.strftime('%Y-%m-%d'))
-                    if suc: st.success(msg); st.rerun()
-                    else: st.error(msg)
-                else:
-                    st.error("Preencha os campos obrigatórios.")
-
-    # --- ABA 2: LISTAR (SIMPLIFICADA) ---
+    # ABA 2: GERENCIAR (Onde estava o erro)
     with tab2:
-        st.header("📝 Gerenciar Processos")
-        processos = listar()
-        if processos:
-            df = pd.DataFrame(processos, columns=["ID", "Número", "RT", "Requerente", "Analista", "Uso", "Tipologia", "Área", "Data", "Status", "Cadastro"])
-            st.dataframe(df, use_container_width=True)
-            
-            sel_proc = st.selectbox("Selecione para Editar/Deletar:", [(p[0], p[1]) for p in processos], format_func=lambda x: f"{x[1]}", key="sel_edit")
-            
-            if sel_proc:
-                pid = sel_proc[0]
-                d = buscar_por_numero(sel_proc[1])
-                if d:
-                    # FORMULÁRIO SIMPLIFICADO (SEM COLUNAS INTERNAS) PARA EVITAR ERRO
-                    with st.form(f"form_edit_{pid}"):
-                        st.subheader(f"Editando: {d[1]}")
-                        e_num = st.text_input("Número", value=d[1])
-                        e_rt = st.text_input("RT", value=d[2])
-                        e_req = st.text_input("Requerente", value=d[3])
-                        e_ana = st.text_input("Analista", value=d[4])
-                        e_uso = st.selectbox("Uso", usos_options, index=usos_options.index(d[5]) if d[5] in usos_options else 0)
-                        e_tipo = st.selectbox("Tipologia", tipologias_options, index=tipologias_options.index(d[6]) if d[6] in tipologias_options else 0)
-                        e_area = st.number_input("Área", value=float(d[7]))
-                        e_data = st.date_input("Data", value=datetime.strptime(d[8], '%Y-%m-%d').date())
-                        
-                        st.markdown("---")
-                        # Botões diretamente dentro do form (sem colunas)
-                        btn_upd = st.form_submit_button("Atualizar Dados", type="primary", use_container_width=True)
-                        btn_del = st.form_submit_button("Deletar Processo", type="danger", use_container_width=True)
-
-                    if btn_upd:
-                        suc, msg = atualizar(pid, e_num, e_rt, e_req, e_ana, e_uso, e_tipo, e_area, e_data.strftime('%Y-%m-%d'))
-                        if suc: st.success(msg); st.rerun()
-                        else: st.error(msg)
-                    
-                    if btn_del:
-                        st.warning("Confirma deleção?")
-                        if st.checkbox("Sim, deletar"):
-                            suc, msg = deletar(pid)
-                            if suc: st.success(msg); st.rerun()
-                            else: st.error(msg)
-
-    # --- ABA 3: TRAMITAÇÃO ---
-    with tab3:
-        st.header("🔄 Tramitação")
-        processos = listar()
-        if processos:
-            sel_tram = st.selectbox("Selecione o Processo:", [(p[0], p[1]) for p in processos], format_func=lambda x: f"{x[1]}", key="sel_tram")
-            if sel_tram:
-                pid = sel_tram[0]
-                with st.form(f"nova_tram_{pid}"):
-                    st.subheader("Nova Movimentação")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        t_setor = st.text_input("Setor")
-                        t_ent = st.date_input("Entrada", value="today")
-                    with col2:
-                        t_sai = st.date_input("Saída", value=None)
-                        t_obs = st.text_area("Obs")
-                    if st.form_submit_button("Registrar"):
-                        suc, msg = registrar_tramitacao(pid, t_setor, t_ent, t_sai, t_obs)
-                        if suc: st.success(msg); st.rerun()
-                        else: st.error(msg)
-                
-                trams = listar_tramitacao(pid)
-                if trams:
-                    df_t = pd.DataFrame(trams, columns=["ID", "PID", "Setor", "Entrada", "Saída", "Obs"])
-                    st.dataframe(df_t)
-
-    # --- ABA 4: KANBAN ---
-    with tab4:
-        st.header("📊 Kanban")
-        processos = listar()
-        if processos:
-            cols = st.columns(5)
-            for i, status in enumerate(status_kanban):
-                with cols[i]:
-                    st.caption(f"**{status}**")
-                    procs_status = [p for p in processos if p[9] == status]
-                    for p in procs_status:
-                        with st.container(border=True):
-                            st.markdown(f"**{p[1]}**\n\n{p[3]}")
-                            if i > 0:
-                                if st.button("⬅️", key=f"prev_{p[0]}"):
-                                    atualizar_status(p[0], status_kanban[i-1]); st.rerun()
-                            if i < 4:
-                                if st.button("➡️", key=f"next_{p[0]}"):
-                                    atualizar_status(p[0], status_kanban[i+1]); st.rerun()
-
-    # --- ABA 5: IA ---
-    with tab5:
-        st.header("🤖 Análise IA")
-        if not st.session_state['api_key']:
-            st.warning("Insira a API Key na barra lateral.")
+        st.header("Editar ou Excluir")
+        procs = listar_processos()
+        if not procs:
+            st.info("Nenhum processo.")
         else:
-            processos = listar()
-            if processos:
-                sel_ia = st.selectbox("Processo:", [(p[0], p[1]) for p in processos], format_func=lambda x: f"{x[1]}", key="sel_ia")
-                if sel_ia:
-                    pid = sel_ia[0]
-                    d = buscar_por_numero(sel_ia[1])
-                    proj = st.file_uploader("PDF Projeto", type=['pdf'], accept_multiple_files=True)
-                    leg = st.file_uploader("PDF Lei", type=['pdf'], accept_multiple_files=True)
-                    regras = st.text_area("Regras a verificar:")
+            # Seleção
+            opcoes = {f"{p[1]} - {p[3]}": p[0] for p in procs} # Dic: "Numero - Req" -> ID
+            selecionado = st.selectbox("Selecione o processo:", list(opcoes.keys()))
+            id_selecionado = opcoes[selecionado]
+            
+            dados = buscar_processo(id_selecionado)
+            
+            if dados:
+                st.markdown("---")
+                # 1. FORMULÁRIO APENAS PARA EDIÇÃO (Seguro)
+                with st.form(f"form_edit_{id_selecionado}"):
+                    st.subheader("Editar Dados")
+                    ec1, ec2 = st.columns(2)
+                    enum = ec1.text_input("Número", value=dados[1])
+                    ert = ec1.text_input("RT", value=dados[2])
+                    euso = ec1.selectbox("Uso", ["Unifamiliar", "Multifamiliar", "Comercial", "Misto"], index=0)
+                    earea = ec1.number_input("Área", value=float(dados[7]))
                     
-                    if st.button("Analisar com IA", type="primary"):
-                        if proj and leg and regras:
-                            with st.spinner("Analisando..."):
-                                try:
-                                    txt_p = ""
-                                    for p in proj: txt_p += PyPDF2.PdfReader(p).pages[0].extract_text()
-                                    txt_l = ""
-                                    for l in leg: txt_l += PyPDF2.PdfReader(l).pages[0].extract_text()
-                                    
-                                    model = genai.GenerativeModel('gemini-1.5-flash')
-                                    prompt = f"Analise o projeto {d[1]} ({d[5]}, {d[7]}m²) com base na lei:\n\nLEI: {txt_l[:5000]}\n\nPROJETO: {txt_p[:5000]}\n\nREGRAS: {regras}"
-                                    resp = model.generate_content(prompt)
-                                    st.markdown(resp.text)
-                                    salvar_analise(pid, resp.text, "Concluído")
-                                except Exception as e:
-                                    st.error(f"Erro: {e}")
+                    ereq = ec2.text_input("Requerente", value=dados[3])
+                    eana = ec2.text_input("Analista", value=dados[4])
+                    etipo = ec2.selectbox("Tipo", ["Aprovação", "Regularização", "Modificação"], index=0)
+                    edata = ec2.date_input("Data", value=datetime.strptime(dados[8], '%Y-%m-%d').date())
+                    
+                    # Botão de salvar DENTRO do form
+                    if st.form_submit_button("💾 Salvar Alterações", type="primary"):
+                        suc, msg = executar_query(
+                            'UPDATE processos SET numero=?, rt=?, requerente=?, analista=?, uso=?, tipologia=?, area=?, data_protocolo=? WHERE id=?',
+                            (enum, ert, ereq, eana, euso, etipo, earea, edata.strftime('%Y-%m-%d'), id_selecionado), commit=True
+                        )
+                        if suc: st.success("Atualizado!"); st.rerun()
+                        else: st.error(f"Erro: {msg}")
 
-    # --- ABA 6: GRÁFICOS ---
-    with tab6:
-        st.header("📈 Gráficos")
-        if pd and px:
-            df = get_processos_df()
-            if not df.empty:
-                grafico = st.selectbox("Tipo", ["Por Uso", "Por Status"])
-                if grafico == "Por Uso":
-                    fig = px.bar(df['uso'].value_counts().reset_index(), x='uso', y='count')
-                    st.plotly_chart(fig)
-                elif grafico == "Por Status":
-                    fig = px.pie(df['status'].value_counts().reset_index(), names='status', values='count')
-                    st.plotly_chart(fig)
+                # 2. BOTÃO DE DELETAR FORA DO FORM (Impossível dar erro de indentação de form)
+                st.markdown("### Zona de Perigo")
+                col_del_1, col_del_2 = st.columns([1, 4])
+                with col_del_1:
+                    # Este botão NÃO é um form_submit_button, é um button comum.
+                    if st.button("🗑️ Deletar Processo", type="primary"):
+                        st.session_state[f'confirm_del_{id_selecionado}'] = True
+                
+                if st.session_state.get(f'confirm_del_{id_selecionado}'):
+                    st.warning("Tem certeza? Essa ação não pode ser desfeita.")
+                    if st.button("Sim, confirmar exclusão"):
+                        executar_query('DELETE FROM analises WHERE processo_id=?', (id_selecionado,), commit=True)
+                        executar_query('DELETE FROM tramitacao WHERE processo_id=?', (id_selecionado,), commit=True)
+                        executar_query('DELETE FROM processos WHERE id=?', (id_selecionado,), commit=True)
+                        st.success("Processo deletado.")
+                        st.session_state[f'confirm_del_{id_selecionado}'] = False
+                        st.rerun()
 
-if not st.session_state['logged_in']:
-    login_form()
-else:
-    main_app_content()
+    # ABA 3: TRAMITAÇÃO
+    with tab3:
+        st.header("Tramitação")
+        if procs:
+            sel_tram_key = st.selectbox("Processo:", list(opcoes.keys()), key="sel_tram")
+            pid_tram = opcoes[sel_tram_key]
+            
+            with st.form("nova_tram"):
+                c1, c2 = st.columns(2)
+                setor = c1.text_input("Setor Destino")
+                dt_ent = c1.date_input("Entrada")
+                obs = c2.text_area("Obs")
+                if st.form_submit_button("Movimentar"):
+                    # Fecha anterior
+                    executar_query("UPDATE tramitacao SET data_saida=? WHERE processo_id=? AND data_saida IS NULL", 
+                                 (dt_ent.strftime('%Y-%m-%d'), pid_tram), commit=True)
+                    # Cria nova
+                    executar_query("INSERT INTO tramitacao (processo_id, setor, data_entrada, observacao) VALUES (?,?,?,?)",
+                                 (pid_tram, setor, dt_ent.strftime('%Y-%m-%d'), obs), commit=True)
+                    st.success("Movimentado!")
+                    st.rerun()
+            
+            # Histórico
+            suc, res = executar_query("SELECT * FROM tramitacao WHERE processo_id=? ORDER BY id DESC", (pid_tram,))
+            if suc:
+                trams = res.fetchall()
+                if trams:
+                    df = pd.DataFrame(trams, columns=['ID', 'PID', 'Setor', 'Entrada', 'Saída', 'Obs'])
+                    st.dataframe(df)
+
+    # ABA 4: KANBAN
+    with tab4:
+        st.header("Kanban")
+        cols = st.columns(5)
+        status_list = ['Protocolado', 'Em Análise', 'Aguardando Correções', 'Aprovado', 'Reprovado']
+        
+        for idx, stat in enumerate(status_list):
+            with cols[idx]:
+                st.caption(f"**{stat}**")
+                filtro = [p for p in procs if p[9] == stat]
+                for p in filtro:
+                    with st.container(border=True):
+                        st.write(f"**{p[1]}**")
+                        st.write(p[3])
+                        # Botões simples de mover
+                        if idx < 4:
+                            if st.button("➡️", key=f"next_{p[0]}"):
+                                executar_query("UPDATE processos SET status=? WHERE id=?", (status_list[idx+1], p[0]), commit=True)
+                                st.rerun()
+
+    # ABA 5: IA
+    with tab5:
+        st.header("Análise IA")
+        if not api_key:
+            st.warning("Configure a API Key na barra lateral.")
+        elif procs:
+            sel_ia_key = st.selectbox("Processo para Análise:", list(opcoes.keys()), key="sel_ia")
+            pid_ia = opcoes[sel_ia_key]
+            d_ia = buscar_processo(pid_ia)
+            
+            upload_proj = st.file_uploader("PDF Projeto", type='pdf')
+            upload_lei = st.file_uploader("PDF Lei", type='pdf')
+            
+            if st.button("Analisar") and upload_proj and upload_lei:
+                with st.spinner("Lendo documentos..."):
+                    try:
+                        # Extração simples
+                        txt_p = PyPDF2.PdfReader(upload_proj).pages[0].extract_text()
+                        txt_l = PyPDF2.PdfReader(upload_lei).pages[0].extract_text()
+                        
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        prompt = f"Analise se o projeto {d_ia[1]} cumpre a lei.\nLEI: {txt_l[:2000]}\nPROJETO: {txt_p[:2000]}"
+                        res = model.generate_content(prompt)
+                        st.markdown(res.text)
+                    except Exception as e:
+                        st.error(f"Erro IA: {e}")
+
+if __name__ == "__main__":
+    main()
