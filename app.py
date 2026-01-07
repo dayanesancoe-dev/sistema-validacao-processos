@@ -48,6 +48,7 @@ def init_db():
         )''')
         
         # === CORREÇÃO FORÇADA DE NOMES DE SETORES ANTIGOS ===
+        # Garante que "Pró-análise" vire "Pré-análise" automaticamente
         updates = [
             "UPDATE tramitacao SET setor = 'Pré-análise' WHERE setor = 'Pró-análise'",
             "UPDATE tramitacao SET setor = 'Pré-análise' WHERE setor = 'Pró-Análise'",
@@ -114,7 +115,7 @@ def main():
                     st.error("Dados incorretos.")
         return
 
-    # --- MENU ---
+    # --- MENU LATERAL ---
     st.sidebar.title("🏛️ Menu")
     if st.sidebar.button("Sair"):
         st.session_state['logged_in'] = False
@@ -123,43 +124,36 @@ def main():
     api_key = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key: genai.configure(api_key=api_key)
 
-    # === NOVO: EXPORTAÇÃO PARA EXCEL ===
+    # === SEÇÃO DE DADOS E BACKUP (BARRA LATERAL) ===
     st.sidebar.markdown("---")
-    st.sidebar.header("📥 Exportar Dados")
+    st.sidebar.header("💾 Dados e Backup")
+    
     if conn and pd is not None:
-        # Botão 1: Processos
-        df_procs = get_processos_df()
-        if not df_procs.empty:
-            csv_procs = df_procs.to_csv(index=False, sep=';', encoding='utf-8-sig')
-            st.sidebar.download_button(
-                label="📄 Baixar Lista de Processos",
-                data=csv_procs,
-                file_name="processos_cadastrados.csv",
-                mime="text/csv",
-                help="Baixa a lista de todos os processos em formato compatível com Excel."
-            )
-        
-        # Botão 2: Histórico Completo (Join)
-        try:
-            query_completa = """
-                SELECT p.numero, p.requerente, p.rt, p.uso, p.tipologia, p.status, 
-                       t.setor, t.data_entrada, t.data_saida, t.observacao 
-                FROM tramitacao t 
-                JOIN processos p ON t.processo_id = p.id
-                ORDER BY p.numero, t.data_entrada
-            """
-            df_hist = pd.read_sql_query(query_completa, conn)
-            if not df_hist.empty:
-                csv_hist = df_hist.to_csv(index=False, sep=';', encoding='utf-8-sig')
+        # 1. Exportar Excel/CSV
+        with st.sidebar.expander("📥 Exportar Planilhas"):
+            df_procs = get_processos_df()
+            if not df_procs.empty:
+                csv_procs = df_procs.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                st.download_button("📄 Lista de Processos", csv_procs, "processos.csv", "text/csv")
+            
+            try:
+                q_hist = "SELECT p.numero, t.* FROM tramitacao t JOIN processos p ON t.processo_id = p.id"
+                df_hist = pd.read_sql_query(q_hist, conn)
+                if not df_hist.empty:
+                    csv_hist = df_hist.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                    st.download_button("📜 Histórico Completo", csv_hist, "historico.csv", "text/csv")
+            except: pass
+
+        # 2. Backup do Arquivo .DB (NOVO)
+        if os.path.exists("processos.db"):
+            with open("processos.db", "rb") as f:
                 st.sidebar.download_button(
-                    label="📜 Baixar Histórico Completo",
-                    data=csv_hist,
-                    file_name="historico_tramitacoes.csv",
-                    mime="text/csv",
-                    help="Baixa todas as movimentações detalhadas."
+                    label="📦 Baixar Backup (.db)",
+                    data=f,
+                    file_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M')}.db",
+                    mime="application/octet-stream",
+                    help="Guarde este arquivo. Ele contém TODOS os seus dados."
                 )
-        except Exception as e:
-            st.sidebar.error(f"Erro ao gerar histórico: {e}")
 
     # --- ABAS ---
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA", "📈 Dashboard"])
@@ -242,10 +236,9 @@ def main():
             sel_key = st.selectbox("Processo:", list(opcoes.keys()), key="tram_sel")
             pid_tram = opcoes[sel_key]
             
-            # --- NOVA MOVIMENTAÇÃO (LAYOUT ATUALIZADO) ---
+            # --- NOVA MOVIMENTAÇÃO ---
             with st.form("new_tram"):
                 st.subheader("Nova Movimentação")
-                
                 c1, c2 = st.columns(2)
                 setor = c1.selectbox("Setor Destino", setores)
                 obs = c2.text_area("Observação", height=68)
@@ -253,11 +246,9 @@ def main():
                 st.markdown("**Datas:**")
                 c3, c4 = st.columns(2)
                 
-                # Coluna 1: Entrada
                 with c3:
                     dt_ent = st.date_input("📅 Data de Entrada", value=date.today())
                 
-                # Coluna 2: Saída
                 with c4:
                     tem_saida = st.checkbox("Informar Data de Saída?")
                     if tem_saida:
