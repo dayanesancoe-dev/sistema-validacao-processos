@@ -123,11 +123,12 @@ def main():
     api_key = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key: genai.configure(api_key=api_key)
 
-    # === SEÇÃO DE DADOS E BACKUP (BARRA LATERAL) ===
+    # === SEÇÃO DE DADOS, BACKUP E RESTAURAÇÃO (BARRA LATERAL) ===
     st.sidebar.markdown("---")
     st.sidebar.header("💾 Dados e Backup")
     
     if conn and pd is not None:
+        # 1. Exportar Excel/CSV
         with st.sidebar.expander("📥 Exportar Planilhas"):
             df_procs = get_processos_df()
             if not df_procs.empty:
@@ -142,14 +143,36 @@ def main():
                     st.download_button("📜 Histórico Completo", csv_hist, "historico.csv", "text/csv")
             except: pass
 
+        # 2. Baixar Backup (.DB)
         if os.path.exists("processos.db"):
             with open("processos.db", "rb") as f:
                 st.sidebar.download_button(
                     label="📦 Baixar Backup (.db)",
                     data=f,
                     file_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M')}.db",
-                    mime="application/octet-stream"
+                    mime="application/octet-stream",
+                    help="Guarde este arquivo. Ele contém TODOS os seus dados."
                 )
+        
+        # 3. Restaurar Backup (IMPORTAR) - NOVO!
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("⚠️ Restaurar Backup")
+        uploaded_db = st.sidebar.file_uploader("Upload do arquivo .db", type="db")
+        
+        if uploaded_db:
+            st.sidebar.warning("Atenção: Isso substituirá TODOS os dados atuais pelos dados do arquivo enviado.")
+            if st.sidebar.button("🔴 Confirmar Restauração"):
+                try:
+                    # Salva o arquivo enviado sobrepondo o atual
+                    with open("processos.db", "wb") as f:
+                        f.write(uploaded_db.getbuffer())
+                    st.toast("Banco de dados restaurado com sucesso! Reiniciando...", icon="✅")
+                    # Pequena pausa para garantir a gravação e recarrega
+                    import time
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"Erro ao restaurar: {e}")
 
     # --- ABAS ---
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA", "📈 Dashboard"])
@@ -276,10 +299,12 @@ def main():
                     now = pd.Timestamp.now().normalize()
                     df['Dias'] = df.apply(lambda x: ((x['Saída'] if pd.notnull(x['Saída']) else now) - x['Entrada']).days, axis=1)
                     
+                    # Resumo
                     st.subheader("📊 Total de Dias por Setor")
                     df_resumo = df.groupby('Setor')['Dias'].sum().reset_index().sort_values('Dias', ascending=False)
                     st.dataframe(df_resumo, use_container_width=True)
                     
+                    # Detalhado
                     st.subheader("📜 Histórico Detalhado")
                     df_show = df.copy()
                     df_show['Entrada'] = df_show['Entrada'].dt.strftime('%d/%m/%Y')
@@ -346,7 +371,7 @@ def main():
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
                                 st.rerun()
 
-    # --- ABA 5: IA (AJUSTADA PARA O SEU PRINT DE DEBUG) ---
+    # --- ABA 5: IA (MODELS FIX) ---
     with tab5:
         st.header("Análise IA")
         if not api_key: st.warning("Sem API Key.")
@@ -370,13 +395,12 @@ def main():
                             reader = PyPDF2.PdfReader(l_file)
                             for page in reader.pages: txt_l += page.extract_text() or ""
                         
-                        # USANDO EXATAMENTE O QUE APARECEU NO SEU DEBUG
-                        # O servidor só reconhece se tiver o prefixo "models/" em alguns casos
+                        # Lista compatível com sua conta (baseado no seu Debug)
                         modelos = [
-                            'models/gemini-1.5-pro',   # Prioridade 1: Melhor raciocínio
-                            'models/gemini-1.5-flash', # Prioridade 2: Mais rápido
-                            'gemini-1.5-pro',          # Tentativa sem prefixo
-                            'gemini-1.5-flash'         # Tentativa sem prefixo
+                            'models/gemini-1.5-pro',
+                            'models/gemini-1.5-flash',
+                            'gemini-1.5-pro',
+                            'gemini-1.5-flash'
                         ]
                         
                         resultado = None
@@ -398,8 +422,11 @@ def main():
                         if resultado:
                             st.markdown(resultado.text)
                         else:
-                            st.error("Erro Crítico: Atualize o 'requirements.txt' no GitHub.")
-                            st.info("Adicione a linha: google-generativeai>=0.8.3")
+                            st.error("Erro na conexão com IA. Atualize 'requirements.txt' com 'google-generativeai>=0.8.3'.")
+                            with st.expander("Debug"):
+                                try:
+                                    for m in genai.list_models(): st.write(m.name)
+                                except Exception as e: st.write(e)
 
                     except Exception as e: st.error(f"Erro geral: {e}")
 
