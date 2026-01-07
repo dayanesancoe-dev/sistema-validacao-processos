@@ -399,7 +399,7 @@ def main_app_content():
                 area = st.number_input("Área Construída (m²)", min_value=0.0, format="%.2f", key="cad_area")
             with col2:
                 requerente = st.text_input("Requerente", key="cad_requerente")
-                analista = st.text_input("Analista Responsável", key="cad_analista")
+                analista = st.text_input("Analista Responsável", value=st.session_state.get('username', ''), key="cad_analista") # Preenche com o usuário logado
                 tipologia = st.selectbox("Tipologia", tipologias_options, key="cad_tipologia")
                 data_protocolo = st.date_input("Data do Protocolo", value="today", key="cad_data_protocolo")
 
@@ -443,6 +443,7 @@ def main_app_content():
 
             if processo_selecionado_id:
                 pid_selecionado = processo_selecionado_id[0]
+                st.write(f"DEBUG: Processo selecionado ID para edição/deleção = {pid_selecionado}") # LINHA DE DEBUG
                 dados_processo = buscar_por_numero(processo_selecionado_id[1])
 
                 if dados_processo:
@@ -505,6 +506,7 @@ def main_app_content():
 
             if processo_selecionado_tramitacao:
                 pid_tramitacao = processo_selecionado_tramitacao[0]
+                st.write(f"DEBUG: Processo selecionado ID para tramitação = {pid_tramitacao}") # LINHA DE DEBUG
                 dados_processo_tramitacao = buscar_por_numero(processo_selecionado_tramitacao[1])
 
                 if dados_processo_tramitacao:
@@ -667,6 +669,7 @@ def main_app_content():
 
             if processo_selecionado_analise:
                 pid_analise = processo_selecionado_analise[0]
+                st.write(f"DEBUG: Processo selecionado ID para análise IA = {pid_analise}") # LINHA DE DEBUG
                 dados = buscar_por_numero(processo_selecionado_analise[1])
 
                 if dados:
@@ -677,10 +680,8 @@ def main_app_content():
                     st.markdown("#### 📄 Anexar Documentos")
                     col_proj, col_leg = st.columns(2)
                     with col_proj:
-                        st.subheader("🏗️ Projeto Arquitetônico")
                         proj = st.file_uploader("PDFs do Projeto", type=['pdf'], accept_multiple_files=True, key="proj_upload")
                     with col_leg:
-                        st.subheader("📜 Legislação Municipal")
                         leg = st.file_uploader("PDFs da Legislação", type=['pdf'], accept_multiple_files=True, key="leg_upload")
 
                     st.divider()
