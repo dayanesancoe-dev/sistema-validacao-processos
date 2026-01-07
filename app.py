@@ -4,7 +4,6 @@ import PyPDF2
 from datetime import datetime, timedelta
 import sqlite3
 import os
-# Removido bcrypt pois a gestão de usuários foi simplificada
 
 # ==================== Importação de bibliotecas opcionais (para gráficos) ====================
 try:
@@ -13,7 +12,7 @@ try:
 except ImportError:
     pd = None
     px = None
-    st.error("❌ Erro: As bibliotecas 'pandas' e 'plotly' não foram encontradas. A aba de gráficos não funcionará. Por favor, verifique seu 'requirements.txt' e faça um 'Clear cache and redeploy' no Streamlit Share.")
+    st.error("❌ Erro: As bibliotecas 'pandas' e 'plotly' não foram encontradas. A aba de gráficos não funcionará.")
 
 st.set_page_config(page_title="Sistema de Validação", page_icon="🏛️", layout="wide")
 
@@ -24,22 +23,17 @@ if 'db_reset_needed_rerun' not in st.session_state:
     st.session_state['db_reset_needed_rerun'] = False
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
-if 'username' not in st.session_state: # Adicionado para armazenar o nome de usuário logado
+if 'username' not in st.session_state: 
     st.session_state['username'] = None
 
 if st.session_state['db_reset_needed_rerun']:
     st.session_state['db_reset_needed_rerun'] = False
     st.rerun()
-
+ 
 # ==================== BANCO DE DADOS ====================
-
-# A função reset_database foi removida para simplificar e evitar o erro persistente.
-# Se precisar resetar o banco, você terá que deletar o arquivo 'processos.db' manualmente no ambiente do Streamlit Share
-# (se tiver acesso aos arquivos) ou recriar o app.
 
 @st.cache_resource
 def init_db():
-    """Inicializa o banco de dados, criando tabelas se não existirem ou se o schema estiver desatualizado."""
     try:
         conn = sqlite3.connect('processos.db', check_same_thread=False)
         c = conn.cursor()
@@ -50,7 +44,6 @@ def init_db():
         ]
 
         schema_outdated = False
-
         c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='processos'")
         table_exists = c.fetchone()
 
@@ -70,7 +63,6 @@ def init_db():
             c.execute('DROP TABLE IF EXISTS tramitacao')
             c.execute('DROP TABLE IF EXISTS analises')
             c.execute('DROP TABLE IF EXISTS processos')
-            # Removido 'DROP TABLE IF EXISTS users' pois a tabela de usuários não será mais usada
             conn.commit()
 
             c.execute('''CREATE TABLE processos (
@@ -107,8 +99,6 @@ def init_db():
             FOREIGN KEY (processo_id) REFERENCES processos(id)
         )''')
 
-        # Removida a criação da tabela 'users'
-
         conn.commit()
         return conn
     except Exception as e:
@@ -120,7 +110,6 @@ conn = init_db()
 # ==================== FUNÇÕES CRUD (PROCESSOS) ====================
 
 def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
-    """Cadastra um novo processo no banco de dados."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -131,12 +120,11 @@ def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_proto
         conn.commit()
         return True, "✅ Processo cadastrado com sucesso!"
     except sqlite3.IntegrityError:
-        return False, "❌ Erro: Já existe um processo com este número. Por favor, use um número único."
+        return False, "❌ Erro: Já existe um processo com este número."
     except Exception as e:
         return False, f"❌ Erro ao cadastrar: {str(e)}"
 
 def listar():
-    """Lista todos os processos cadastrados."""
     if not conn: return []
     try:
         c = conn.cursor()
@@ -147,7 +135,6 @@ def listar():
         return []
 
 def buscar_por_numero(numero):
-    """Busca um processo pelo número."""
     if not conn: return None
     try:
         c = conn.cursor()
@@ -158,7 +145,6 @@ def buscar_por_numero(numero):
         return []
 
 def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
-    """Atualiza os dados de um processo existente."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -169,12 +155,11 @@ def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_
         conn.commit()
         return True, "✅ Processo atualizado com sucesso!"
     except sqlite3.IntegrityError:
-        return False, "❌ Erro: Número de processo já existe! Por favor, use um número único."
+        return False, "❌ Erro: Número de processo já existe!"
     except Exception as e:
         return False, f"❌ Erro ao atualizar processo: {str(e)}"
 
 def deletar(pid):
-    """Deleta um processo e suas tramitações/análises associadas."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -187,7 +172,6 @@ def deletar(pid):
         return False, f"❌ Erro ao deletar processo: {str(e)}" 
 
 def atualizar_status(pid, novo_status):
-    """Atualiza o status de um processo."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -200,17 +184,13 @@ def atualizar_status(pid, novo_status):
 # ==================== FUNÇÕES CRUD (TRAMITAÇÃO) ====================
 
 def registrar_tramitacao(processo_id, setor, data_entrada, data_saida=None, observacao=""):
-    """Registra uma nova movimentação de tramitação para um processo."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
-        # Atualiza a data de saída da última tramitação aberta para este processo
         c.execute('''UPDATE tramitacao 
                     SET data_saida = ? 
                     WHERE processo_id = ? AND data_saida IS NULL''', 
-                 (data_entrada.strftime('%Y-%m-%d'), processo_id)) # Formata data_entrada para string
-
-        # Insere a nova tramitação
+                 (data_entrada.strftime('%Y-%m-%d'), processo_id))
         c.execute('''INSERT INTO tramitacao 
                     (processo_id, setor, data_entrada, data_saida, observacao) 
                     VALUES (?, ?, ?, ?, ?)''',
@@ -221,7 +201,6 @@ def registrar_tramitacao(processo_id, setor, data_entrada, data_saida=None, obse
         return False, f"❌ Erro ao registrar tramitação: {str(e)}"
 
 def listar_tramitacao(processo_id):
-    """Lista as tramitações de um processo específico."""
     if not conn: return []
     try:
         c = conn.cursor()
@@ -232,7 +211,6 @@ def listar_tramitacao(processo_id):
         return []
 
 def atualizar_tramitacao(tid, setor, data_entrada, data_saida, observacao):
-    """Atualiza uma movimentação de tramitação existente."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -246,7 +224,6 @@ def atualizar_tramitacao(tid, setor, data_entrada, data_saida, observacao):
         return False, f"❌ Erro ao atualizar movimentação: {str(e)}"
 
 def deletar_tramitacao(tid):
-    """Deleta uma movimentação de tramitação."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -259,7 +236,6 @@ def deletar_tramitacao(tid):
 # ==================== FUNÇÕES CRUD (ANÁLISES) ====================
 
 def salvar_analise(processo_id, resultado, status):
-    """Salva o resultado de uma análise no banco de dados."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -272,7 +248,6 @@ def salvar_analise(processo_id, resultado, status):
         return False, f"❌ Erro ao salvar análise: {str(e)}"
 
 def listar_analises(processo_id):
-    """Lista as análises de um processo específico."""
     if not conn: return []
     try:
         c = conn.cursor()
@@ -284,7 +259,6 @@ def listar_analises(processo_id):
 
 # ==================== FUNÇÕES DE GRÁFICOS ====================
 def get_processos_df():
-    """Carrega todos os processos para um DataFrame do pandas."""
     if not conn or pd is None: return pd.DataFrame()
     try:
         df = pd.read_sql_query("SELECT * FROM processos", conn)
@@ -292,29 +266,14 @@ def get_processos_df():
         df['data_cadastro'] = pd.to_datetime(df['data_cadastro'], errors='coerce')
         return df
     except Exception as e:
-        st.error(f"❌ Erro ao carregar processos para DataFrame: {e}")
+        st.error(f"❌ Erro ao carregar processos: {e}")
         return pd.DataFrame()
 
-def get_tramitacoes_df():
-    """Carrega todas as tramitações para um DataFrame do pandas."""
-    if not conn or pd is None: return pd.DataFrame()
-    try:
-        df = pd.read_sql_query("SELECT * FROM tramitacao", conn)
-        df['data_entrada'] = pd.to_datetime(df['data_entrada'], errors='coerce')
-        df['data_saida'] = pd.to_datetime(df['data_saida'], errors='coerce')
-        df['duracao_dias'] = (df['data_saida'] - df['data_entrada']).dt.days.fillna(0)
-        return df
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar tramitações para DataFrame: {e}")
-        return pd.DataFrame()
-
-# ==================== TELAS DE LOGIN ====================
+# ==================== LOGIN ====================
 
 def login_form():
-    """Exibe o formulário de login."""
     st.title("Login no Sistema de Validação 🏛️")
     st.markdown("---")
-
     with st.form("login_form"):
         username = st.text_input("Usuário", key="login_username")
         password = st.text_input("Senha", type="password", key="login_password")
@@ -325,606 +284,199 @@ def login_form():
             admin_password = st.secrets.get("admin_user", {}).get("password")
 
             if admin_username is None or admin_password is None:
-                st.error("❌ Credenciais de administrador não configuradas corretamente no '.streamlit/secrets.toml'.")
-                st.info("Por favor, verifique se a seção '[admin_user]' com 'username' e 'password' está presente e correta.")
+                st.error("❌ Credenciais não configuradas no '.streamlit/secrets.toml'.")
                 return
 
             if username == admin_username and password == admin_password:
                 st.session_state['logged_in'] = True
                 st.session_state['username'] = username
-                st.success(f"Login realizado com sucesso! Bem-vindo(a), {username}!")
                 st.rerun()
             else:
                 st.error("Usuário ou senha incorretos.")
 
-    st.info("Para acessar o sistema, use o usuário 'admin' e a senha que você configurou no arquivo '.streamlit/secrets.toml'.")
-
-
-# ==================== CONTEÚDO PRINCIPAL DO APP ====================
+# ==================== APP PRINCIPAL ====================
 
 def main_app_content():
-    """Conteúdo principal do aplicativo após o login."""
-    # Opções para os campos de seleção
     usos_options = ["Unifamiliar", "Multifamiliar", "Serviços", "Comércio Varejista", "Comércio Atacadista", "Indústria", "Misto", "Sem destinação específica"]
     tipologias_options = ["Aprovação Inicial", "Levantamento Existente", "Modificação de Projeto", "Regularização", "Misto", "RIU", "ERB", "As Built"]
-    setores_tramitacao = ["Protocolo", "Requerente", "Analista", "Fiscalização", "Parecer Externo", "Emissão de Alvará", "Arquivo"]
     status_kanban = ["Protocolado", "Em Análise", "Aguardando Correções", "Aprovado", "Reprovado"]
 
     st.sidebar.title("🏛️ Sistema de Validação")
     st.sidebar.markdown(f"Bem-vindo(a), **{st.session_state.get('username', 'Usuário')}**!")
-    st.sidebar.image("https://www.contagem.mg.gov.br/portal/uploads/2023/07/logo-contagem-2023.png", width=200)
-    st.sidebar.markdown("---")
-
-    if st.sidebar.button("Sair", type="secondary", key="sidebar_logout_button"): # Adicionada chave explícita
+    
+    if st.sidebar.button("Sair", type="secondary", key="logout"): 
         st.session_state['logged_in'] = False
-        st.session_state['username'] = None
         st.rerun()
 
     st.sidebar.markdown("---")
-    # O botão "Resetar Banco de Dados" e sua função foram removidos para simplificar e evitar erros persistentes.
-    # st.sidebar.button("Resetar Banco de Dados (CUIDADO!)", type="danger", key="sidebar_reset_db_button")
-
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("⚙️ Configurações de IA")
-    st.session_state['api_key'] = st.sidebar.text_input(
-        "Sua API Key do Google Gemini:",
-        value=st.session_state['api_key'],
-        type="password",
-        help="Insira sua chave de API do Google Gemini para usar a análise de IA. Obtenha uma em https://aistudio.google.com/app/apikey",
-        key="sidebar_api_key"
-    )
+    st.session_state['api_key'] = st.sidebar.text_input("Sua API Key Gemini:", type="password", key="sidebar_api_key")
     if st.session_state['api_key']:
-        try:
-            genai.configure(api_key=st.session_state['api_key'])
-            st.sidebar.success("API Key configurada!")
-        except Exception as e:
-            st.sidebar.error(f"Erro ao configurar API Key: {str(e)}")
-    else:
-        st.sidebar.warning("API Key não configurada. A análise de IA não funcionará.")
+        genai.configure(api_key=st.session_state['api_key'])
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "➕ Cadastrar", "📝 Listar", "🔄 Tramitação", "📊 Kanban", "🤖 Análise IA", "📈 Gráficos"
-    ])
-    # Removida a tab "Gerenciar Usuários"
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Cadastrar", "📝 Listar", "🔄 Tramitação", "📊 Kanban", "🤖 Análise IA", "📈 Gráficos"])
 
-    # ==================== ABA 1: CADASTRAR ====================
+    # --- ABA 1: CADASTRAR ---
     with tab1:
-        st.header("➕ Cadastrar Novo Processo")
-        with st.form("cadastro_processo"):
+        st.header("➕ Cadastrar Processo")
+        with st.form("cadastro"):
             col1, col2 = st.columns(2)
             with col1:
-                numero = st.text_input("Número do Processo", help="Número único de identificação do processo.", key="cad_numero")
-                rt = st.text_input("Responsável Técnico", key="cad_rt")
-                uso = st.selectbox("Uso", usos_options, key="cad_uso")
-                area = st.number_input("Área Construída (m²)", min_value=0.0, format="%.2f", key="cad_area")
+                numero = st.text_input("Número do Processo")
+                rt = st.text_input("Responsável Técnico")
+                uso = st.selectbox("Uso", usos_options)
+                area = st.number_input("Área (m²)", min_value=0.0, format="%.2f")
             with col2:
-                requerente = st.text_input("Requerente", key="cad_requerente")
-                analista = st.text_input("Analista Responsável", value=st.session_state.get('username', ''), key="cad_analista") # Preenche com o usuário logado
-                tipologia = st.selectbox("Tipologia", tipologias_options, key="cad_tipologia")
-                data_protocolo = st.date_input("Data do Protocolo", value="today", key="cad_data_protocolo")
+                requerente = st.text_input("Requerente")
+                analista = st.text_input("Analista")
+                tipologia = st.selectbox("Tipologia", tipologias_options)
+                data_protocolo = st.date_input("Data Protocolo", value="today")
 
-            submitted = st.form_submit_button("Cadastrar Processo", type="primary", use_container_width=True)
-            if submitted:
-                if numero and rt and requerente and analista and uso and tipologia and area is not None and data_protocolo:
-                    sucesso, msg = cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo.strftime('%Y-%m-%d'))
-                    if sucesso:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
+            if st.form_submit_button("Cadastrar", type="primary", use_container_width=True):
+                if numero and rt and requerente:
+                    suc, msg = cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo.strftime('%Y-%m-%d'))
+                    if suc: st.success(msg); st.rerun()
+                    else: st.error(msg)
                 else:
-                    st.error("❌ Por favor, preencha todos os campos obrigatórios.")
+                    st.error("Preencha os campos obrigatórios.")
 
-    # ==================== ABA 2: LISTAR ====================
+    # --- ABA 2: LISTAR (SIMPLIFICADA) ---
     with tab2:
-        st.header("📝 Listar e Gerenciar Processos")
+        st.header("📝 Gerenciar Processos")
         processos = listar()
-        if not processos:
-            st.info("📭 Nenhum processo cadastrado ainda.")
-        else:
-            df_processos = pd.DataFrame(processos, columns=[
-                "ID", "Número", "RT", "Requerente", "Analista", "Uso", 
-                "Tipologia", "Área (m²)", "Data Protocolo", "Status", "Data Cadastro"
-            ])
-            df_processos['Data Protocolo'] = pd.to_datetime(df_processos['Data Protocolo']).dt.strftime('%d/%m/%Y')
-            df_processos['Data Cadastro'] = pd.to_datetime(df_processos['Data Cadastro']).dt.strftime('%d/%m/%Y %H:%M')
+        if processos:
+            df = pd.DataFrame(processos, columns=["ID", "Número", "RT", "Requerente", "Analista", "Uso", "Tipologia", "Área", "Data", "Status", "Cadastro"])
+            st.dataframe(df, use_container_width=True)
+            
+            sel_proc = st.selectbox("Selecione para Editar/Deletar:", [(p[0], p[1]) for p in processos], format_func=lambda x: f"{x[1]}", key="sel_edit")
+            
+            if sel_proc:
+                pid = sel_proc[0]
+                d = buscar_por_numero(sel_proc[1])
+                if d:
+                    # FORMULÁRIO SIMPLIFICADO (SEM COLUNAS INTERNAS) PARA EVITAR ERRO
+                    with st.form(f"form_edit_{pid}"):
+                        st.subheader(f"Editando: {d[1]}")
+                        e_num = st.text_input("Número", value=d[1])
+                        e_rt = st.text_input("RT", value=d[2])
+                        e_req = st.text_input("Requerente", value=d[3])
+                        e_ana = st.text_input("Analista", value=d[4])
+                        e_uso = st.selectbox("Uso", usos_options, index=usos_options.index(d[5]) if d[5] in usos_options else 0)
+                        e_tipo = st.selectbox("Tipologia", tipologias_options, index=tipologias_options.index(d[6]) if d[6] in tipologias_options else 0)
+                        e_area = st.number_input("Área", value=float(d[7]))
+                        e_data = st.date_input("Data", value=datetime.strptime(d[8], '%Y-%m-%d').date())
+                        
+                        st.markdown("---")
+                        # Botões diretamente dentro do form (sem colunas)
+                        btn_upd = st.form_submit_button("Atualizar Dados", type="primary", use_container_width=True)
+                        btn_del = st.form_submit_button("Deletar Processo", type="danger", use_container_width=True)
 
-            st.dataframe(df_processos, use_container_width=True)
+                    if btn_upd:
+                        suc, msg = atualizar(pid, e_num, e_rt, e_req, e_ana, e_uso, e_tipo, e_area, e_data.strftime('%Y-%m-%d'))
+                        if suc: st.success(msg); st.rerun()
+                        else: st.error(msg)
+                    
+                    if btn_del:
+                        st.warning("Confirma deleção?")
+                        if st.checkbox("Sim, deletar"):
+                            suc, msg = deletar(pid)
+                            if suc: st.success(msg); st.rerun()
+                            else: st.error(msg)
 
-            st.subheader("Atualizar ou Deletar Processo")
-            col_sel, col_btn = st.columns([3, 1])
-            with col_sel:
-                processo_selecionado_id = st.selectbox(
-                    "Selecione o Processo pelo ID ou Número:",
-                    options=[(p[0], p[1]) for p in processos],
-                    format_func=lambda x: f"ID: {x[0]} - Número: {x[1]}",
-                    key="select_processo_edit_del"
-                )
-
-            if processo_selecionado_id:
-                pid_selecionado = processo_selecionado_id[0]
-                st.write(f"DEBUG: Processo selecionado ID para edição/deleção = {pid_selecionado}") # LINHA DE DEBUG
-                dados_processo = buscar_por_numero(processo_selecionado_id[1])
-
-                if dados_processo:
-                    with st.form(f"edit_processo_{pid_selecionado}"):
-                        st.markdown(f"#### Editando Processo ID: {dados_processo[0]} - Número: {dados_processo[1]}")
-
-                        col_e1, col_e2 = st.columns(2)
-                        with col_e1:
-                            edit_numero = st.text_input("Número do Processo", value=dados_processo[1], key=f"edit_numero_{pid_selecionado}")
-                            edit_rt = st.text_input("Responsável Técnico", value=dados_processo[2], key=f"edit_rt_{pid_selecionado}")
-                            edit_uso = st.selectbox("Uso", usos_options, index=usos_options.index(dados_processo[5]), key=f"edit_uso_{pid_selecionado}")
-                            edit_area = st.number_input("Área Construída (m²)", value=float(dados_processo[7]), min_value=0.0, format="%.2f", key=f"edit_area_{pid_selecionado}")
-                        with col_e2:
-                            edit_requerente = st.text_input("Requerente", value=dados_processo[3], key=f"edit_requerente_{pid_selecionado}")
-                            edit_analista = st.text_input("Analista Responsável", value=dados_processo[4], key=f"edit_analista_{pid_selecionado}")
-                            edit_tipologia = st.selectbox("Tipologia", tipologias_options, index=tipologias_options.index(dados_processo[6]), key=f"edit_tipologia_{pid_selecionado}")
-                            edit_data_protocolo = st.date_input("Data do Protocolo", value=datetime.strptime(dados_processo[8], '%Y-%m-%d').date(), key=f"edit_data_protocolo_{pid_selecionado}")
-
-                        col_upd, col_del = st.columns(2)
-                        with col_upd:
-                            submitted_update = st.form_submit_button("Atualizar Processo", type="primary", use_container_width=True, key=f"submit_update_{pid_selecionado}")
-                        with col_del:
-                            submitted_delete = st.form_submit_button("Deletar Processo", type="danger", use_container_width=True, key=f"submit_delete_{pid_selecionado}")
-
-                        if submitted_update:
-                            if edit_numero and edit_rt and edit_requerente and edit_analista and edit_uso and edit_tipologia and edit_area is not None and edit_data_protocolo:
-                                sucesso, msg = atualizar(pid_selecionado, edit_numero, edit_rt, edit_requerente, edit_analista, edit_uso, edit_tipologia, edit_area, edit_data_protocolo.strftime('%Y-%m-%d'))
-                                if sucesso:
-                                    st.success(msg)
-                                    st.rerun()
-                                else:
-                                    st.error(msg)
-                            else:
-                                st.error("❌ Por favor, preencha todos os campos para atualizar.")
-
-                        if submitted_delete:
-                            st.warning(f"Tem certeza que deseja deletar o processo {dados_processo[1]}? Todas as tramitações e análises associadas também serão deletadas.")
-                            confirm_deletion = st.checkbox("Sim, eu confirmo a deleção deste processo.", key=f"confirm_checkbox_delete_{pid_selecionado}")
-                            if confirm_deletion: # A deleção só ocorre se o checkbox for marcado
-                                sucesso, msg = deletar(pid_selecionado)
-                                if sucesso:
-                                    st.success(msg)
-                                    st.rerun()
-                                else:
-                                    st.error(msg)
-
-    # ==================== ABA 3: TRAMITAÇÃO ====================
+    # --- ABA 3: TRAMITAÇÃO ---
     with tab3:
-        st.header("🔄 Gerenciar Tramitação de Processos")
-        processos_tramitacao = listar()
-        if not processos_tramitacao:
-            st.info("📭 Nenhum processo cadastrado para gerenciar tramitação.")
-        else:
-            processo_selecionado_tramitacao = st.selectbox(
-                "Selecione o Processo para Tramitação:",
-                options=[(p[0], p[1]) for p in processos_tramitacao],
-                format_func=lambda x: f"ID: {x[0]} - Número: {x[1]}",
-                key="select_processo_tramitacao"
-            )
+        st.header("🔄 Tramitação")
+        processos = listar()
+        if processos:
+            sel_tram = st.selectbox("Selecione o Processo:", [(p[0], p[1]) for p in processos], format_func=lambda x: f"{x[1]}", key="sel_tram")
+            if sel_tram:
+                pid = sel_tram[0]
+                with st.form(f"nova_tram_{pid}"):
+                    st.subheader("Nova Movimentação")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        t_setor = st.text_input("Setor")
+                        t_ent = st.date_input("Entrada", value="today")
+                    with col2:
+                        t_sai = st.date_input("Saída", value=None)
+                        t_obs = st.text_area("Obs")
+                    if st.form_submit_button("Registrar"):
+                        suc, msg = registrar_tramitacao(pid, t_setor, t_ent, t_sai, t_obs)
+                        if suc: st.success(msg); st.rerun()
+                        else: st.error(msg)
+                
+                trams = listar_tramitacao(pid)
+                if trams:
+                    df_t = pd.DataFrame(trams, columns=["ID", "PID", "Setor", "Entrada", "Saída", "Obs"])
+                    st.dataframe(df_t)
 
-            if processo_selecionado_tramitacao:
-                pid_tramitacao = processo_selecionado_tramitacao[0]
-                st.write(f"DEBUG: Processo selecionado ID para tramitação = {pid_tramitacao}") # LINHA DE DEBUG
-                dados_processo_tramitacao = buscar_por_numero(processo_selecionado_tramitacao[1])
-
-                if dados_processo_tramitacao:
-                    st.subheader(f"Tramitação do Processo: {dados_processo_tramitacao[1]} - Requerente: {dados_processo_tramitacao[3]}")
-
-                    st.markdown("#### Registrar Nova Movimentação")
-                    with st.form(f"form_nova_tramitacao_{pid_tramitacao}"):
-                        col_t1, col_t2 = st.columns(2)
-                        with col_t1:
-                            setor = st.text_input("Setor de Destino", key=f"tram_setor_{pid_tramitacao}")
-                            data_entrada = st.date_input("Data de Entrada", value="today", key=f"tram_data_entrada_{pid_tramitacao}")
-                        with col_t2:
-                            data_saida = st.date_input("Data de Saída (Opcional)", value=None, key=f"tram_data_saida_{pid_tramitacao}")
-                            observacao = st.text_area("Observação", key=f"tram_obs_{pid_tramitacao}")
-
-                        submitted_tram = st.form_submit_button("Registrar Tramitação", type="primary", use_container_width=True, key=f"submit_tram_{pid_tramitacao}")
-                        if submitted_tram:
-                            if setor and data_entrada:
-                                sucesso, msg = registrar_tramitacao(pid_tramitacao, setor, data_entrada, data_saida, observacao)
-                                if sucesso:
-                                    st.success(msg)
-                                    st.rerun()
-                                else:
-                                    st.error(msg)
-                            else:
-                                st.error("❌ Por favor, preencha o setor e a data de entrada.")
-
-                    st.markdown("#### Histórico de Tramitações")
-                    tramitacoes = listar_tramitacao(pid_tramitacao)
-                    if not tramitacoes:
-                        st.info("📭 Nenhuma tramitação registrada para este processo.")
-                    else:
-                        df_tramitacoes = pd.DataFrame(tramitacoes, columns=[
-                            "ID", "Processo ID", "Setor", "Data Entrada", "Data Saída", "Observação"
-                        ])
-                        df_tramitacoes['Data Entrada'] = pd.to_datetime(df_tramitacoes['Data Entrada']).dt.strftime('%d/%m/%Y')
-                        df_tramitacoes['Data Saída'] = df_tramitacoes['Data Saída'].apply(lambda x: pd.to_datetime(x).strftime('%d/%m/%Y') if pd.notna(x) else 'Em Aberto')
-
-                        st.dataframe(df_tramitacoes, use_container_width=True)
-
-                        st.markdown("#### Editar ou Deletar Movimentação")
-                        tramitacao_selecionada_id = st.selectbox(
-                            "Selecione a Movimentação pelo ID:",
-                            options=[t[0] for t in tramitacoes],
-                            format_func=lambda x: f"ID: {x} - Setor: {next((t[2] for t in tramitacoes if t[0] == x), '')}",
-                            key=f"select_tram_edit_del_{pid_tramitacao}"
-                        )
-
-                        if tramitacao_selecionada_id:
-                            dados_tramitacao = next((t for t in tramitacoes if t[0] == tramitacao_selecionada_id), None)
-                            if dados_tramitacao:
-                                with st.form(f"form_edit_tramitacao_{tramitacao_selecionada_id}"):
-                                    st.markdown(f"##### Editando Movimentação ID: {dados_tramitacao[0]}")
-                                    col_et1, col_et2 = st.columns(2)
-                                    with col_et1:
-                                        edit_setor = st.text_input("Setor de Destino", value=dados_tramitacao[2], key=f"edit_tram_setor_{tramitacao_selecionada_id}")
-                                        edit_data_entrada = st.date_input("Data de Entrada", value=datetime.strptime(dados_tramitacao[3], '%Y-%m-%d').date(), key=f"edit_tram_data_entrada_{tramitacao_selecionada_id}")
-                                    with col_et2:
-                                        edit_data_saida_val = datetime.strptime(dados_tramitacao[4], '%Y-%m-%d').date() if dados_tramitacao[4] else None
-                                        edit_data_saida = st.date_input("Data de Saída (Opcional)", value=edit_data_saida_val, key=f"edit_tram_data_saida_{tramitacao_selecionada_id}")
-                                        edit_observacao = st.text_area("Observação", value=dados_tramitacao[5], key=f"edit_tram_obs_{tramitacao_selecionada_id}")
-
-                                    col_upd_tram, col_del_tram = st.columns(2)
-                                    with col_upd_tram:
-                                        submitted_update_tram = st.form_submit_button("Atualizar Movimentação", type="primary", use_container_width=True, key=f"submit_update_tram_{tramitacao_selecionada_id}")
-                                    with col_del_tram:
-                                        submitted_delete_tram = st.form_submit_button("Deletar Movimentação", type="danger", use_container_width=True, key=f"submit_delete_tram_{tramitacao_selecionada_id}")
-
-                                    if submitted_update_tram:
-                                        if edit_setor and edit_data_entrada:
-                                            sucesso, msg = atualizar_tramitacao(tramitacao_selecionada_id, edit_setor, edit_data_entrada.strftime('%Y-%m-%d'), edit_data_saida.strftime('%Y-%m-%d') if edit_data_saida else None, edit_observacao)
-                                            if sucesso:
-                                                st.success(msg)
-                                                st.rerun()
-                                            else:
-                                                st.error(msg)
-                                        else:
-                                            st.error("❌ Por favor, preencha o setor e a data de entrada.")
-
-                                    if submitted_delete_tram:
-                                        st.warning(f"Tem certeza que deseja deletar a movimentação ID {dados_tramitacao[0]}?")
-                                        confirm_tram_deletion = st.checkbox("Sim, eu confirmo a deleção desta movimentação.", key=f"confirm_checkbox_delete_tram_{tramitacao_selecionada_id}")
-                                        if confirm_tram_deletion: # A deleção só ocorre se o checkbox for marcado
-                                            sucesso, msg = deletar_tramitacao(tramitacao_selecionada_id)
-                                            if sucesso:
-                                                st.success(msg)
-                                                st.rerun()
-                                            else:
-                                                st.error(msg)
-
-    # ==================== ABA 4: KANBAN ====================
+    # --- ABA 4: KANBAN ---
     with tab4:
-        st.header("📊 Kanban de Processos")
-        processos_kanban = listar()
-        if not processos_kanban:
-            st.info("📭 Nenhum processo cadastrado para exibir no Kanban.")
-        else:
-            status_kanban = ["Protocolado", "Em Análise", "Aguardando Correções", "Aprovado", "Reprovado"]
-            processos_por_status = {status: [] for status in status_kanban}
-            for p in processos_kanban:
-                processos_por_status[p[9]].append(p)
-
-            cols = st.columns(len(status_kanban))
-
+        st.header("📊 Kanban")
+        processos = listar()
+        if processos:
+            cols = st.columns(5)
             for i, status in enumerate(status_kanban):
                 with cols[i]:
-                    st.subheader(f"{status} ({len(processos_por_status[status])})")
-                    st.markdown("---")
+                    st.caption(f"**{status}**")
+                    procs_status = [p for p in processos if p[9] == status]
+                    for p in procs_status:
+                        with st.container(border=True):
+                            st.markdown(f"**{p[1]}**\n\n{p[3]}")
+                            if i > 0:
+                                if st.button("⬅️", key=f"prev_{p[0]}"):
+                                    atualizar_status(p[0], status_kanban[i-1]); st.rerun()
+                            if i < 4:
+                                if st.button("➡️", key=f"next_{p[0]}"):
+                                    atualizar_status(p[0], status_kanban[i+1]); st.rerun()
 
-                    for p in processos_por_status[status]:
-                        card_color = "lightgray"
-                        if status == "Aprovado": card_color = "lightgreen"
-                        elif status == "Reprovado": card_color = "lightcoral"
-                        elif status == "Em Análise": card_color = "lightblue"
-                        elif status == "Aguardando Correções": card_color = "lightgoldenrodyellow"
-
-                        st.markdown(f"""
-                        <div style="background-color: {card_color}; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-                            <p><strong>Processo:</strong> {p[1]}</p>
-                            <p><strong>Requerente:</strong> {p[3]}</p>
-                            <p><strong>Tipologia:</strong> {p[6]}</p>
-                            <p><strong>Protocolo:</strong> {datetime.strptime(p[8], '%Y-%m-%d').strftime('%d/%m/%Y')}</p>
-                            <p><strong>Analista:</strong> {p[4]}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                        current_status_index = status_kanban.index(status)
-
-                        if current_status_index > 0:
-                            if st.button(f"⬅️ Mover para {status_kanban[current_status_index-1]}", key=f"move_prev_{p[0]}"):
-                                sucesso, msg = atualizar_status(p[0], status_kanban[current_status_index-1])
-                                if sucesso: st.rerun()
-                                else: st.error(msg)
-
-                        if current_status_index < len(status_kanban) - 1:
-                            if st.button(f"➡️ Mover para {status_kanban[current_status_index+1]}", key=f"move_next_{p[0]}"):
-                                sucesso, msg = atualizar_status(p[0], status_kanban[current_status_index+1])
-                                if sucesso: st.rerun()
-                                else: st.error(msg)
-                        st.markdown("---")
-
+    # --- ABA 5: IA ---
     with tab5:
-        st.header("🤖 Análise de Projetos com IA")
-
+        st.header("🤖 Análise IA")
         if not st.session_state['api_key']:
-            st.warning("⚠️ Configure sua API Key do Google Gemini na barra lateral para usar esta função.")
-            st.info("Como obter: Acesse https://aistudio.google.com/app/apikey e crie uma chave gratuita.")
-            st.stop()
-
-        processos_analise = listar()
-        if not processos_analise:
-            st.info("📭 Nenhum processo cadastrado para análise.")
+            st.warning("Insira a API Key na barra lateral.")
         else:
-            processo_selecionado_analise = st.selectbox(
-                "Selecione o Processo para Análise:",
-                options=[(p[0], p[1]) for p in processos_analise],
-                format_func=lambda x: f"ID: {x[0]} - Número: {x[1]}",
-                key="select_processo_analise"
-            )
-
-            if processo_selecionado_analise:
-                pid_analise = processo_selecionado_analise[0]
-                st.write(f"DEBUG: Processo selecionado ID para análise IA = {pid_analise}") # LINHA DE DEBUG
-                dados = buscar_por_numero(processo_selecionado_analise[1])
-
-                if dados:
-                    st.subheader(f"Analisando Processo: {dados[1]} - Requerente: {dados[3]}")
-                    st.markdown(f"**Status Atual:** {dados[9]}")
-
-                    st.divider()
-                    st.markdown("#### 📄 Anexar Documentos")
-                    col_proj, col_leg = st.columns(2)
-                    with col_proj:
-                        proj = st.file_uploader("PDFs do Projeto", type=['pdf'], accept_multiple_files=True, key="proj_upload")
-                    with col_leg:
-                        leg = st.file_uploader("PDFs da Legislação", type=['pdf'], accept_multiple_files=True, key="leg_upload")
-
-                    st.divider()
-                    regras = st.text_area("📏 Regras Específicas a Verificar (Artigos da Lei, etc.):", height=150, 
-                                          placeholder="Ex: Art. 10 - Área mínima de 50m² para lotes residenciais. Art. 15 - Recuo frontal de 3m.",
-                                          key="regras_ia")
-
-                    st.divider()
-
-                    if st.button("🔍 INICIAR ANÁLISE COM IA", type="primary", use_container_width=True):
-                        if not st.session_state['api_key']:
-                            st.error("❌ Por favor, insira sua API Key do Google Gemini na barra lateral para iniciar a análise.")
-                        elif not proj:
-                            st.error("❌ Anexe pelo menos 1 PDF do projeto!")
-                        elif not leg:
-                            st.error("❌ Anexe pelo menos 1 PDF da legislação!")
-                        elif not regras:
-                            st.error("❌ Digite as regras que devem ser verificadas!")
-                        else:
-                            with st.spinner("🤖 Analisando projeto com Inteligência Artificial... Isso pode levar alguns minutos..."):
+            processos = listar()
+            if processos:
+                sel_ia = st.selectbox("Processo:", [(p[0], p[1]) for p in processos], format_func=lambda x: f"{x[1]}", key="sel_ia")
+                if sel_ia:
+                    pid = sel_ia[0]
+                    d = buscar_por_numero(sel_ia[1])
+                    proj = st.file_uploader("PDF Projeto", type=['pdf'], accept_multiple_files=True)
+                    leg = st.file_uploader("PDF Lei", type=['pdf'], accept_multiple_files=True)
+                    regras = st.text_area("Regras a verificar:")
+                    
+                    if st.button("Analisar com IA", type="primary"):
+                        if proj and leg and regras:
+                            with st.spinner("Analisando..."):
                                 try:
-                                    genai.configure(api_key=st.session_state['api_key'])
+                                    txt_p = ""
+                                    for p in proj: txt_p += PyPDF2.PdfReader(p).pages[0].extract_text()
+                                    txt_l = ""
+                                    for l in leg: txt_l += PyPDF2.PdfReader(l).pages[0].extract_text()
+                                    
+                                    model = genai.GenerativeModel('gemini-1.5-flash')
+                                    prompt = f"Analise o projeto {d[1]} ({d[5]}, {d[7]}m²) com base na lei:\n\nLEI: {txt_l[:5000]}\n\nPROJETO: {txt_p[:5000]}\n\nREGRAS: {regras}"
+                                    resp = model.generate_content(prompt)
+                                    st.markdown(resp.text)
+                                    salvar_analise(pid, resp.text, "Concluído")
+                                except Exception as e:
+                                    st.error(f"Erro: {e}")
 
-                                    txt_proj = ""
-                                    for pdf in proj:
-                                        reader = PyPDF2.PdfReader(pdf)
-                                        for page in reader.pages:
-                                            txt_proj += page.extract_text() or ""
-
-                                    txt_leg = ""
-                                    for pdf in leg:
-                                        reader = PyPDF2.PdfReader(pdf)
-                                        for page in reader.pages:
-                                            txt_leg += page.extract_text() or ""
-
-                                    model = None
-                                    for nome in ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']:
-                                        try:
-                                            model = genai.GenerativeModel(nome)
-                                            st.info(f"✅ Usando modelo: {nome}")
-                                            break
-                                        except Exception as e:
-                                            continue
-
-                                    if not model:
-                                        st.error("❌ Nenhum modelo do Gemini disponível. Verifique sua API Key e a disponibilidade dos modelos.")
-                                        st.stop()
-
-                                    prompt = f"""Você é um analista técnico especializado em projetos arquitetônicos para aprovação em prefeituras.
-Analise o texto do projeto arquitetônico fornecido abaixo, considerando as seguintes informações do processo:
-
-- **Número do Processo:** {dados[1]}
-- **Responsável Técnico (RT):** {dados[2]}
-- **Requerente:** {dados[3]}
-- **Analista:** {dados[4]}
-- **Uso Predominante:** {dados[5]}
-- **Tipologia do Projeto:** {dados[6]}
-- **Área Construída (m²):** {dados[7]}
-- **Data do Protocolo:** {datetime.strptime(dados[8], '%Y-%m-%d').strftime('%d/%m/%Y')}
-
-Com base no texto do projeto e nas informações acima, forneça um parecer técnico detalhado.
-O parecer deve incluir:
-1.  **Resumo do Projeto:** Uma breve descrição do que o projeto propõe.
-2.  **Conformidade:** Pontos em que o projeto parece estar em conformidade com normas gerais de construção e urbanismo (ex: recuos, taxa de ocupação, coeficiente de aproveitamento, ventilação, iluminação, acessibilidade, etc.).
-3.  **Não Conformidade/Pendências:** Pontos que precisam de correção ou esclarecimento para a aprovação. Seja específico sobre quais itens estão em desacordo ou quais informações estão faltando.
-4.  **Recomendação Final:**
-    *   Se o projeto parece estar em total conformidade e pronto para aprovação, termine o parecer com a frase **"RECOMENDAÇÃO: PROJETO APROVADO"**.
-    *   Se o projeto possui pendências ou não conformidades que exigem correção, termine o parecer com a frase **"RECOMENDAÇÃO: PROJETO REPROVADO"**.
-    *   Se a análise for inconclusiva devido à falta de informações críticas no PDF ou se o PDF for apenas parcial, termine o parecer com a frase **"RECOMENDAÇÃO: ANÁLISE INCONCLUSIVA"**.
-
----
-**TEXTO DO PROJETO ARQUITETÔNICO:**
-{txt_proj[:15000]} # Limita o texto para evitar estouro de token
----
-"""
-
-                                    resposta = model.generate_content(prompt)
-
-                                    texto_resposta = resposta.text
-
-                                    status_analise = "INCONCLUSIVO"
-                                    if "APROVADO" in texto_resposta.upper() and "REPROVADO" not in texto_resposta.upper():
-                                        status_analise = "APROVADO"
-                                        st.success("✅ PROJETO APROVADO")
-                                        atualizar_status(dados[0], "Aprovado")
-                                    elif "REPROVADO" in texto_resposta.upper():
-                                        status_analise = "REPROVADO"
-                                        st.error("❌ PROJETO REPROVADO")
-                                        atualizar_status(dados[0], "Reprovado")
-                                    else:
-                                        st.warning("⚠️ ANÁLISE INCONCLUSIVA")
-                                        atualizar_status(dados[0], "Em Análise")
-
-                                    st.divider()
-
-                                    st.markdown(resposta.text)
-
-                                    salvar_analise(dados[0], resposta.text, status_analise)
-
-                                    relatorio = f"""PREFEITURA DE CONTAGEM - MG
-RELATÓRIO DE ANÁLISE TÉCNICA DE PROJETO ARQUITETÔNICO
-
-Processo: {dados[1]}
-Responsável Técnico: {dados[2]}
-Requerente: {dados[3]}
-Analista: {dados[4]}
-Uso: {dados[5]}
-Tipologia: {dados[6]}
-Área Construída: {dados[7]}m²
-Data do Protocolo: {datetime.strptime(dados[8], '%Y-%m-%d').strftime('%d/%m/%Y')}
-Status do Processo: {dados[9]}
-Data da Análise: {datetime.now().strftime('%d/%m/%Y às %H:%M')}
-
-{'='*80}
-
-{resposta.text}
-
-{'='*80}
-Relatório gerado automaticamente por Inteligência Artificial (Google Gemini)
-Sistema de Validação de Processos - Prefeitura de Contagem
-"""
-
-                                    st.divider()
-
-                                    st.download_button(
-                                        label="📥 BAIXAR RELATÓRIO COMPLETO (TXT)",
-                                        data=relatorio,
-                                        file_name=f"relatorio_processo_{dados[1].replace('.', '_').replace('/', '_')}.txt",
-                                        mime="text/plain",
-                                        type="primary",
-                                        use_container_width=True
-                                    )
-
-                                except Exception as erro:
-                                    st.error(f"❌ Erro durante a análise: {str(erro)}")
-                                    st.info("Verifique se sua API Key está correta e a disponibilidade dos modelos do Gemini.")
-
+    # --- ABA 6: GRÁFICOS ---
     with tab6:
-        st.header("📈 Análise Gráfica dos Processos")
+        st.header("📈 Gráficos")
+        if pd and px:
+            df = get_processos_df()
+            if not df.empty:
+                grafico = st.selectbox("Tipo", ["Por Uso", "Por Status"])
+                if grafico == "Por Uso":
+                    fig = px.bar(df['uso'].value_counts().reset_index(), x='uso', y='count')
+                    st.plotly_chart(fig)
+                elif grafico == "Por Status":
+                    fig = px.pie(df['status'].value_counts().reset_index(), names='status', values='count')
+                    st.plotly_chart(fig)
 
-        if pd is None or px is None:
-            st.error("❌ As bibliotecas de gráficos (pandas, plotly) não estão disponíveis. Verifique seu 'requirements.txt'.")
-        else:
-            procs_df = get_processos_df()
-
-            if procs_df.empty:
-                st.info("📭 Nenhum dado para gerar gráficos. Cadastre processos primeiro na aba 'Cadastrar'.")
-            else:
-                st.subheader("Selecione o tipo de gráfico para visualizar os dados:")
-                chart_type = st.selectbox("Escolha a análise:", [
-                    "Processos por Uso",
-                    "Processos por Tipologia",
-                    "Processos por Analista",
-                    "Distribuição de Status Kanban",
-                    "Área Total por Uso",
-                    "Processos por Data de Protocolo"
-                ])
-
-                st.divider()
-
-                if chart_type == "Processos por Uso":
-                    st.markdown("### 📊 Quantidade de Processos por Tipo de Uso")
-                    df_grouped = procs_df['uso'].value_counts().reset_index()
-                    df_grouped.columns = ['Uso', 'Quantidade']
-                    fig = px.bar(df_grouped, x='Uso', y='Quantidade', 
-                                 title='Número de Processos por Tipo de Uso',
-                                 labels={'Uso': 'Tipo de Uso', 'Quantidade': 'Número de Processos'},
-                                 color='Uso', 
-                                 template='plotly_white')
-                    st.plotly_chart(fig, use_container_width=True)
-
-                elif chart_type == "Processos por Tipologia":
-                    st.markdown("### 📊 Quantidade de Processos por Tipologia")
-                    df_grouped = procs_df['tipologia'].value_counts().reset_index()
-                    df_grouped.columns = ['Tipologia', 'Quantidade']
-                    fig = px.bar(df_grouped, x='Tipologia', y='Quantidade', 
-                                 title='Número de Processos por Tipologia',
-                                 labels={'Tipologia': 'Tipologia do Projeto', 'Quantidade': 'Número de Processos'},
-                                 color='Tipologia',
-                                 template='plotly_white')
-                    st.plotly_chart(fig, use_container_width=True)
-
-                elif chart_type == "Processos por Analista":
-                    st.markdown("### 📊 Quantidade de Processos por Analista")
-                    df_grouped = procs_df['analista'].value_counts().reset_index()
-                    df_grouped.columns = ['Analista', 'Quantidade']
-                    fig = px.bar(df_grouped, x='Analista', y='Quantidade', 
-                                 title='Número de Processos por Analista',
-                                 labels={'Analista': 'Nome do Analista', 'Quantidade': 'Número de Processos'},
-                                 color='Analista',
-                                 template='plotly_white')
-                    st.plotly_chart(fig, use_container_width=True)
-
-                elif chart_type == "Distribuição de Status Kanban":
-                    st.markdown("### 📊 Distribuição de Processos por Status Kanban")
-                    df_grouped = procs_df['status'].value_counts().reset_index()
-                    df_grouped.columns = ['Status', 'Quantidade']
-                    fig = px.pie(df_grouped, values='Quantidade', names='Status', 
-                                 title='Distribuição Percentual de Processos por Status',
-                                 hole=0.3, 
-                                 template='plotly_white')
-                    st.plotly_chart(fig, use_container_width=True)
-
-                elif chart_type == "Área Total por Uso":
-                    st.markdown("### 📊 Área Construída Total por Tipo de Uso")
-                    df_grouped = procs_df.groupby('uso')['area'].sum().reset_index()
-                    df_grouped.columns = ['Uso', 'Area Total (m²)']
-                    fig = px.bar(df_grouped, x='Uso', y='Area Total (m²)', 
-                                 title='Área Construída Total por Tipo de Uso',
-                                 labels={'Uso': 'Tipo de Uso', 'Area Total (m²)': 'Área Total (m²)'},
-                                 color='Uso',
-                                 template='plotly_white')
-                    st.plotly_chart(fig, use_container_width=True)
-
-                elif chart_type == "Processos por Data de Protocolo":
-                    st.markdown("### 📊 Número de Processos Protocolados ao Longo do Tempo")
-                    df_valid_dates = procs_df.dropna(subset=['data_protocolo'])
-                    if not df_valid_dates.empty:
-                        df_grouped = df_valid_dates.groupby(df_valid_dates['data_protocolo'].dt.to_period('M')).size().reset_index(name='Quantidade')
-                        df_grouped['data_protocolo'] = df_grouped['data_protocolo'].dt.to_timestamp()
-
-                        fig = px.line(df_grouped, x='data_protocolo', y='Quantidade', 
-                                      title='Processos Protocolados por Mês',
-                                      labels={'data_protocolo': 'Mês de Protocolo', 'Quantidade': 'Número de Processos'},
-                                      template='plotly_white')
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("Nenhum processo com data de protocolo válida para este gráfico.")
-
-
-# ==================== LÓGICA PRINCIPAL DO APP ====================
 if not st.session_state['logged_in']:
     login_form()
 else:
     main_app_content()
-
-# Rodapé
-st.divider()
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center'>
-    <p><strong>🏛️ Sistema de Validação de Processos com Inteligência Artificial</strong></p>
-    <p>Prefeitura de Contagem - MG • Setor de Liberação de Alvarás de Construção</p>
-    <p style='font-size: 0.85em; color: #666;'>Powered by Google Gemini, Streamlit, Plotly & Pandas</p>
-</div>
-""", unsafe_allow_html=True)
