@@ -119,7 +119,9 @@ def main():
     # Variáveis Globais
     usos = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
     tipos = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
-    setores = ["Análise prévia", "Pró-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos"]
+    
+    # === ATUALIZAÇÃO AQUI: ADICIONADO 'REQUERENTE' NA LISTA ===
+    setores = ["Análise prévia", "Pró-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos", "Requerente"]
 
     # --- ABA 1: CADASTRAR ---
     with tab1:
@@ -143,7 +145,7 @@ def main():
                 if suc: st.success("Sucesso!"); st.rerun()
                 else: st.error(f"Erro: {msg}")
 
-    # --- ABA 2: GERENCIAR (CORRIGIDO SEM COLUNAS NO BOTÃO) ---
+    # --- ABA 2: GERENCIAR ---
     with tab2:
         st.header("Editar ou Excluir")
         procs = listar_processos()
@@ -189,7 +191,7 @@ def main():
                         executar_query('DELETE FROM processos WHERE id=?', (pid,), commit=True)
                         st.success("Excluído!"); st.rerun()
 
-    # --- ABA 3: TRAMITAÇÃO (ATUALIZADA COM DATAS LADO A LADO) ---
+    # --- ABA 3: TRAMITAÇÃO ---
     with tab3:
         st.header("Tramitação")
         if procs:
