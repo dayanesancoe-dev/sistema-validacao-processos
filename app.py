@@ -155,7 +155,7 @@ def buscar_por_numero(numero):
         return c.fetchone()
     except Exception as e:
         st.error(f"❌ Erro ao buscar processo: {str(e)}")
-        return None
+        return []
 
 def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
     """Atualiza os dados de um processo existente."""
@@ -500,7 +500,7 @@ def main_app_content():
             processo_selecionado_tramitacao = st.selectbox(
                 "Selecione o Processo para Tramitação:",
                 options=[(p[0], p[1]) for p in processos_tramitacao],
-                format_func=lambda x: f"{x[1]} - {buscar_por_numero(x[1])[3]}",
+                format_func=lambda x: f"ID: {x[0]} - Número: {x[1]}",
                 key="select_processo_tramitacao"
             )
 
