@@ -343,7 +343,7 @@ def main():
                                     st.success("Apagado!")
                                     st.rerun()
 
-    # --- ABA 4: KANBAN ---
+    # --- ABA 4: KANBAN (ATUALIZADO COM VOLTAR) ---
     with tab4:
         st.header("Kanban")
         cols = st.columns(5)
@@ -354,12 +354,23 @@ def main():
                 for p in [x for x in procs if x[9] == s]:
                     with st.container(border=True):
                         st.write(f"**{p[1]}**\n{p[3]}")
+                        
+                        # Colunas para botões (Voltar e Avançar)
+                        col_back, col_next = st.columns(2)
+                        
+                        # Botão Voltar (se não for o primeiro status)
+                        if i > 0:
+                            if col_back.button("⬅️", key=f"back_{p[0]}"):
+                                executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i-1], p[0]), commit=True)
+                                st.rerun()
+                        
+                        # Botão Avançar (se não for o último status)
                         if i < 4:
-                            if st.button("➡️", key=f"k_{p[0]}"):
+                            if col_next.button("➡️", key=f"next_{p[0]}"):
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
                                 st.rerun()
 
-    # --- ABA 5: IA (AJUSTADO PARA MODELOS 2.5) ---
+    # --- ABA 5: IA ---
     with tab5:
         st.header("Análise IA")
         if not api_key: st.warning("Sem API Key.")
@@ -380,13 +391,12 @@ def main():
                             reader = PyPDF2.PdfReader(l_file)
                             for page in reader.pages: txt_l += page.extract_text() or ""
                         
-                        # Lista atualizada baseada no seu Debug e nos modelos que funcionaram (mas deram quota)
-                        # Tenta o 2.5 primeiro (que é novo e talvez tenha cota livre)
+                        # Lista de Modelos Atualizada
                         modelos = [
-                            'models/gemini-2.5-flash', # Prioridade: Novo!
-                            'models/gemini-2.5-pro',   # Alternativa nova
-                            'models/gemini-2.0-flash', # Funcionou, mas deu cota
-                            'models/gemini-1.5-flash'  # Fallback
+                            'models/gemini-2.5-flash', 
+                            'models/gemini-2.5-pro',   
+                            'models/gemini-2.0-flash', 
+                            'models/gemini-1.5-flash'  
                         ]
                         
                         resultado = None
