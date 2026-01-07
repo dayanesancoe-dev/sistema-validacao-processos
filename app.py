@@ -1,7 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 import PyPDF2
-from datetime import datetime
+from datetime import datetime, date
 import sqlite3
 import os
 
@@ -23,7 +23,6 @@ def init_db():
         conn = sqlite3.connect('processos.db', check_same_thread=False)
         c = conn.cursor()
         
-        # Criação simplificada e robusta das tabelas
         c.execute('''CREATE TABLE IF NOT EXISTS processos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             numero TEXT UNIQUE NOT NULL,
@@ -71,7 +70,6 @@ def listar_processos():
     return res.fetchall() if suc else []
 
 def buscar_processo(numero_ou_id):
-    # Tenta buscar por ID se for int, senão por número
     query = 'SELECT * FROM processos WHERE id = ?' if isinstance(numero_ou_id, int) else 'SELECT * FROM processos WHERE numero = ?'
     suc, res = executar_query(query, (numero_ou_id,))
     return res.fetchone() if suc else None
@@ -88,7 +86,6 @@ def main():
             user = st.text_input("Usuário")
             pwd = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar"):
-                # Pega senha do secrets ou usa padrão 'admin'/'admin' para teste local se falhar
                 admin_user = st.secrets.get("admin_user", {}).get("username", "admin")
                 admin_pass = st.secrets.get("admin_user", {}).get("password", "admin")
                 
@@ -97,7 +94,7 @@ def main():
                     st.rerun()
                 else:
                     st.error("Dados incorretos.")
-        return # Para a execução aqui se não estiver logado
+        return
 
     # --- BARRA LATERAL ---
     st.sidebar.title("🏛️ Menu")
@@ -112,6 +109,19 @@ def main():
     # --- ABAS ---
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA"])
 
+    # Listas Padronizadas
+    usos_options = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
+    tipologias_options = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
+    # LISTA ATUALIZADA DE SETORES
+    setores_tramitacao = [
+        "Análise prévia", 
+        "Pró-análise", 
+        "Analista", 
+        "Parecer externo", 
+        "Fiscalização", 
+        "Emissão de documentos"
+    ]
+
     # ABA 1: NOVO PROCESSO
     with tab1:
         st.header("Cadastrar Processo")
@@ -119,12 +129,12 @@ def main():
             c1, c2 = st.columns(2)
             num = c1.text_input("Número Processo")
             rt = c1.text_input("RT")
-            uso = c1.selectbox("Uso", ["Unifamiliar", "Multifamiliar", "Comercial", "Misto"])
+            uso = c1.selectbox("Uso", usos_options)
             area = c1.number_input("Área (m²)", min_value=0.0)
             
             req = c2.text_input("Requerente")
             ana = c2.text_input("Analista")
-            tipo = c2.selectbox("Tipo", ["Aprovação", "Regularização", "Modificação"])
+            tipo = c2.selectbox("Tipo", tipologias_options)
             data = c2.date_input("Data Protocolo")
             
             if st.form_submit_button("Salvar", type="primary"):
@@ -135,37 +145,33 @@ def main():
                 if suc: st.success("Sucesso!"); st.rerun()
                 else: st.error(f"Erro: {msg}")
 
-    # ABA 2: GERENCIAR (Onde estava o erro)
+    # ABA 2: GERENCIAR
     with tab2:
         st.header("Editar ou Excluir")
         procs = listar_processos()
         if not procs:
             st.info("Nenhum processo.")
         else:
-            # Seleção
-            opcoes = {f"{p[1]} - {p[3]}": p[0] for p in procs} # Dic: "Numero - Req" -> ID
+            opcoes = {f"{p[1]} - {p[3]}": p[0] for p in procs}
             selecionado = st.selectbox("Selecione o processo:", list(opcoes.keys()))
             id_selecionado = opcoes[selecionado]
-            
             dados = buscar_processo(id_selecionado)
             
             if dados:
                 st.markdown("---")
-                # 1. FORMULÁRIO APENAS PARA EDIÇÃO (Seguro)
                 with st.form(f"form_edit_{id_selecionado}"):
                     st.subheader("Editar Dados")
                     ec1, ec2 = st.columns(2)
                     enum = ec1.text_input("Número", value=dados[1])
                     ert = ec1.text_input("RT", value=dados[2])
-                    euso = ec1.selectbox("Uso", ["Unifamiliar", "Multifamiliar", "Comercial", "Misto"], index=0)
+                    euso = ec1.selectbox("Uso", usos_options, index=usos_options.index(dados[5]) if dados[5] in usos_options else 0)
                     earea = ec1.number_input("Área", value=float(dados[7]))
                     
                     ereq = ec2.text_input("Requerente", value=dados[3])
                     eana = ec2.text_input("Analista", value=dados[4])
-                    etipo = ec2.selectbox("Tipo", ["Aprovação", "Regularização", "Modificação"], index=0)
+                    etipo = ec2.selectbox("Tipo", tipologias_options, index=tipologias_options.index(dados[6]) if dados[6] in tipologias_options else 0)
                     edata = ec2.date_input("Data", value=datetime.strptime(dados[8], '%Y-%m-%d').date())
                     
-                    # Botão de salvar DENTRO do form
                     if st.form_submit_button("💾 Salvar Alterações", type="primary"):
                         suc, msg = executar_query(
                             'UPDATE processos SET numero=?, rt=?, requerente=?, analista=?, uso=?, tipologia=?, area=?, data_protocolo=? WHERE id=?',
@@ -174,11 +180,9 @@ def main():
                         if suc: st.success("Atualizado!"); st.rerun()
                         else: st.error(f"Erro: {msg}")
 
-                # 2. BOTÃO DE DELETAR FORA DO FORM (Impossível dar erro de indentação de form)
                 st.markdown("### Zona de Perigo")
                 col_del_1, col_del_2 = st.columns([1, 4])
                 with col_del_1:
-                    # Este botão NÃO é um form_submit_button, é um button comum.
                     if st.button("🗑️ Deletar Processo", type="primary"):
                         st.session_state[f'confirm_del_{id_selecionado}'] = True
                 
@@ -192,35 +196,68 @@ def main():
                         st.session_state[f'confirm_del_{id_selecionado}'] = False
                         st.rerun()
 
-    # ABA 3: TRAMITAÇÃO
+    # ABA 3: TRAMITAÇÃO (ATUALIZADA COM DIAS)
     with tab3:
         st.header("Tramitação")
         if procs:
             sel_tram_key = st.selectbox("Processo:", list(opcoes.keys()), key="sel_tram")
             pid_tram = opcoes[sel_tram_key]
             
+            # --- FORMULÁRIO DE NOVA MOVIMENTAÇÃO ---
             with st.form("nova_tram"):
+                st.subheader("Nova Movimentação")
                 c1, c2 = st.columns(2)
-                setor = c1.text_input("Setor Destino")
-                dt_ent = c1.date_input("Entrada")
-                obs = c2.text_area("Obs")
-                if st.form_submit_button("Movimentar"):
-                    # Fecha anterior
+                # Agora usa a lista fixa de setores
+                setor = c1.selectbox("Para qual setor o processo vai?", setores_tramitacao)
+                dt_ent = c1.date_input("Data de Entrada no Setor", value=date.today())
+                obs = c2.text_area("Observação")
+                
+                st.caption("ℹ️ Ao movimentar, o sistema fechará automaticamente a permanência no setor anterior.")
+                
+                if st.form_submit_button("Movimentar Processo"):
+                    # 1. Fecha o setor anterior (define data_saida como a data da nova entrada)
                     executar_query("UPDATE tramitacao SET data_saida=? WHERE processo_id=? AND data_saida IS NULL", 
                                  (dt_ent.strftime('%Y-%m-%d'), pid_tram), commit=True)
-                    # Cria nova
+                    # 2. Cria o novo registro
                     executar_query("INSERT INTO tramitacao (processo_id, setor, data_entrada, observacao) VALUES (?,?,?,?)",
                                  (pid_tram, setor, dt_ent.strftime('%Y-%m-%d'), obs), commit=True)
-                    st.success("Movimentado!")
+                    st.success("Processo movimentado com sucesso!")
                     st.rerun()
             
-            # Histórico
-            suc, res = executar_query("SELECT * FROM tramitacao WHERE processo_id=? ORDER BY id DESC", (pid_tram,))
+            # --- TABELA DE HISTÓRICO COM CÁLCULO DE DIAS ---
+            st.divider()
+            st.subheader("Histórico de Movimentações")
+            suc, res = executar_query("SELECT * FROM tramitacao WHERE processo_id=? ORDER BY data_entrada DESC", (pid_tram,))
+            
             if suc:
                 trams = res.fetchall()
                 if trams:
+                    # Cria DataFrame
                     df = pd.DataFrame(trams, columns=['ID', 'PID', 'Setor', 'Entrada', 'Saída', 'Obs'])
-                    st.dataframe(df)
+                    
+                    # Converte colunas de data para datetime
+                    df['Entrada'] = pd.to_datetime(df['Entrada'])
+                    df['Saída'] = pd.to_datetime(df['Saída'])
+                    
+                    # CÁLCULO DE DIAS
+                    # Se tiver data de saída: Saída - Entrada. Se não (ainda está lá): Hoje - Entrada.
+                    hoje = pd.Timestamp.now().normalize()
+                    
+                    def calcular_dias(row):
+                        inicio = row['Entrada']
+                        fim = row['Saída'] if pd.notnull(row['Saída']) else hoje
+                        return (fim - inicio).days
+
+                    df['Dias no Setor'] = df.apply(calcular_dias, axis=1)
+                    
+                    # Formata as datas para exibir bonitinho (sem hora) e remove NaN
+                    df['Entrada'] = df['Entrada'].dt.strftime('%d/%m/%Y')
+                    df['Saída'] = df['Saída'].dt.strftime('%d/%m/%Y').fillna("Atual")
+                    
+                    # Remove colunas técnicas (ID e PID) para exibição
+                    st.dataframe(df[['Setor', 'Entrada', 'Saída', 'Dias no Setor', 'Obs']], use_container_width=True)
+                else:
+                    st.info("Nenhuma tramitação registrada.")
 
     # ABA 4: KANBAN
     with tab4:
@@ -236,7 +273,6 @@ def main():
                     with st.container(border=True):
                         st.write(f"**{p[1]}**")
                         st.write(p[3])
-                        # Botões simples de mover
                         if idx < 4:
                             if st.button("➡️", key=f"next_{p[0]}"):
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (status_list[idx+1], p[0]), commit=True)
@@ -258,7 +294,6 @@ def main():
             if st.button("Analisar") and upload_proj and upload_lei:
                 with st.spinner("Lendo documentos..."):
                     try:
-                        # Extração simples
                         txt_p = PyPDF2.PdfReader(upload_proj).pages[0].extract_text()
                         txt_l = PyPDF2.PdfReader(upload_lei).pages[0].extract_text()
                         
