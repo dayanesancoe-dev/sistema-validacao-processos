@@ -123,12 +123,6 @@ def main():
     api_key = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key: genai.configure(api_key=api_key)
 
-    # === DIAGNÓSTICO RÁPIDO ===
-    if genai.__version__ < "0.8.3":
-        st.sidebar.error(f"⚠️ Versão desatualizada: {genai.__version__}. Reinicie o App.")
-    else:
-        st.sidebar.success(f"✅ Versão IA OK: {genai.__version__}")
-
     # === SEÇÃO DE DADOS E BACKUP ===
     st.sidebar.markdown("---")
     st.sidebar.header("💾 Dados e Backup")
@@ -157,7 +151,6 @@ def main():
                     mime="application/octet-stream"
                 )
         
-        # Restaurar Backup
         st.sidebar.markdown("---")
         st.sidebar.subheader("⚠️ Restaurar Backup")
         uploaded_db = st.sidebar.file_uploader("Upload do arquivo .db", type="db")
@@ -360,7 +353,7 @@ def main():
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
                                 st.rerun()
 
-    # --- ABA 5: IA (LISTA ATUALIZADA) ---
+    # --- ABA 5: IA (FINAL) ---
     with tab5:
         st.header("Análise IA")
         if not api_key: st.warning("Sem API Key.")
@@ -381,16 +374,17 @@ def main():
                             reader = PyPDF2.PdfReader(l_file)
                             for page in reader.pages: txt_l += page.extract_text() or ""
                         
-                        # Lista de Modelos baseada no seu Debug
+                        # Tenta usar os modelos padrão do Google
+                        # Agora que sua lib é 0.8.6, esses nomes vão funcionar
                         modelos = [
-                            'models/gemini-2.0-flash', # Prioridade: Modelo mais novo que você tem
-                            'gemini-2.0-flash',
-                            'models/gemini-1.5-flash', # Fallback
-                            'models/gemini-1.5-pro'    # Fallback
+                            'gemini-1.5-flash',
+                            'gemini-1.5-pro',
+                            'gemini-2.0-flash'
                         ]
                         
                         resultado = None
                         modelo_usado = ""
+                        erros = []
                         
                         for m_nome in modelos:
                             try:
@@ -404,17 +398,19 @@ def main():
                                 """)
                                 modelo_usado = m_nome
                                 break
-                            except: continue
+                            except Exception as e:
+                                erros.append(f"{m_nome}: {str(e)}")
+                                continue
                         
                         if resultado:
                             st.success(f"Análise realizada com sucesso! (Modelo: {modelo_usado})")
                             st.markdown(resultado.text)
                         else:
-                            st.error("Erro ao conectar com os modelos. Verifique o Debug abaixo.")
-                            with st.expander("Debug"):
-                                try:
-                                    for m in genai.list_models(): st.write(m.name)
-                                except Exception as e: st.write(e)
+                            st.error("Falha na conexão com todos os modelos.")
+                            st.error("Detalhes do erro (para debug):")
+                            for erro in erros:
+                                st.write(erro)
+                                
                     except Exception as e: st.error(f"Erro geral: {e}")
 
     # --- ABA 6: DASHBOARD ---
