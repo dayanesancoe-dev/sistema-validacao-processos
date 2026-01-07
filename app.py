@@ -123,6 +123,44 @@ def main():
     api_key = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key: genai.configure(api_key=api_key)
 
+    # === NOVO: EXPORTAÇÃO PARA EXCEL ===
+    st.sidebar.markdown("---")
+    st.sidebar.header("📥 Exportar Dados")
+    if conn and pd is not None:
+        # Botão 1: Processos
+        df_procs = get_processos_df()
+        if not df_procs.empty:
+            csv_procs = df_procs.to_csv(index=False, sep=';', encoding='utf-8-sig')
+            st.sidebar.download_button(
+                label="📄 Baixar Lista de Processos",
+                data=csv_procs,
+                file_name="processos_cadastrados.csv",
+                mime="text/csv",
+                help="Baixa a lista de todos os processos em formato compatível com Excel."
+            )
+        
+        # Botão 2: Histórico Completo (Join)
+        try:
+            query_completa = """
+                SELECT p.numero, p.requerente, p.rt, p.uso, p.tipologia, p.status, 
+                       t.setor, t.data_entrada, t.data_saida, t.observacao 
+                FROM tramitacao t 
+                JOIN processos p ON t.processo_id = p.id
+                ORDER BY p.numero, t.data_entrada
+            """
+            df_hist = pd.read_sql_query(query_completa, conn)
+            if not df_hist.empty:
+                csv_hist = df_hist.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                st.sidebar.download_button(
+                    label="📜 Baixar Histórico Completo",
+                    data=csv_hist,
+                    file_name="historico_tramitacoes.csv",
+                    mime="text/csv",
+                    help="Baixa todas as movimentações detalhadas."
+                )
+        except Exception as e:
+            st.sidebar.error(f"Erro ao gerar histórico: {e}")
+
     # --- ABAS ---
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA", "📈 Dashboard"])
 
@@ -219,14 +257,14 @@ def main():
                 with c3:
                     dt_ent = st.date_input("📅 Data de Entrada", value=date.today())
                 
-                # Coluna 2: Saída (com opção de habilitar)
+                # Coluna 2: Saída
                 with c4:
                     tem_saida = st.checkbox("Informar Data de Saída?")
                     if tem_saida:
                         dt_sai = st.date_input("📅 Data de Saída", value=date.today())
                     else:
                         dt_sai = None
-                        st.caption("O processo continuará 'Em Aberto' neste setor.")
+                        st.caption("Saída 'Em Aberto' (Atual)")
                 
                 st.markdown("---")
                 if st.form_submit_button("Movimentar", type="primary"):
@@ -248,7 +286,6 @@ def main():
                 if rows:
                     df = pd.DataFrame(rows, columns=['ID', 'PID', 'Setor', 'Entrada', 'Saída', 'Obs'])
                     
-                    # Normalização Visual
                     df['Setor'] = df['Setor'].replace({'Pró-análise': 'Pré-análise', 'Pró-Análise': 'Pré-análise', 'Pro-analise': 'Pré-análise'})
                     
                     df['Entrada'] = pd.to_datetime(df['Entrada'])
