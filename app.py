@@ -8,7 +8,7 @@ import os
 # ==================== CONFIGURAÇÃO INICIAL ====================
 st.set_page_config(page_title="Sistema de Validação", page_icon="🏛️", layout="wide")
 
-# Importação segura de bibliotecas gráficas
+# Tentativa segura de importar bibliotecas gráficas
 try:
     import pandas as pd
     import plotly.express as px
@@ -23,6 +23,7 @@ def init_db():
         conn = sqlite3.connect('processos.db', check_same_thread=False)
         c = conn.cursor()
         
+        # Tabelas
         c.execute('''CREATE TABLE IF NOT EXISTS processos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             numero TEXT UNIQUE NOT NULL,
@@ -54,7 +55,7 @@ def init_db():
 
 conn = init_db()
 
-# ==================== FUNÇÕES DO SISTEMA ====================
+# ==================== FUNÇÕES AUXILIARES ====================
 def executar_query(query, params=(), commit=False):
     if not conn: return False, "Sem conexão"
     try:
@@ -79,15 +80,13 @@ def get_processos_df():
     try:
         df = pd.read_sql_query("SELECT * FROM processos", conn)
         df['data_protocolo'] = pd.to_datetime(df['data_protocolo'], errors='coerce')
-        df['data_cadastro'] = pd.to_datetime(df['data_cadastro'], errors='coerce')
         return df
     except Exception:
         return pd.DataFrame()
 
 # ==================== INTERFACE PRINCIPAL ====================
-
 def main():
-    # --- AUTENTICAÇÃO ---
+    # --- LOGIN ---
     if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
     
     if not st.session_state['logged_in']:
@@ -98,7 +97,6 @@ def main():
             if st.form_submit_button("Entrar"):
                 admin_user = st.secrets.get("admin_user", {}).get("username", "admin")
                 admin_pass = st.secrets.get("admin_user", {}).get("password", "admin")
-                
                 if user == admin_user and pwd == admin_pass:
                     st.session_state['logged_in'] = True
                     st.rerun()
@@ -106,12 +104,11 @@ def main():
                     st.error("Dados incorretos.")
         return
 
-    # --- MENU LATERAL ---
+    # --- MENU ---
     st.sidebar.title("🏛️ Menu")
     if st.sidebar.button("Sair"):
         st.session_state['logged_in'] = False
         st.rerun()
-    
     st.sidebar.markdown("---")
     api_key = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key: genai.configure(api_key=api_key)
@@ -119,27 +116,26 @@ def main():
     # --- ABAS ---
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA", "📈 Dashboard"])
 
-    # --- VARIÁVEIS GLOBAIS ---
-    usos_options = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
-    tipologias_options = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
-    setores_tramitacao = ["Análise prévia", "Pró-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos"]
+    # Variáveis Globais
+    usos = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
+    tipos = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
+    setores = ["Análise prévia", "Pró-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos"]
 
-    # ABA 1: NOVO PROCESSO
+    # --- ABA 1: CADASTRAR ---
     with tab1:
         st.header("Cadastrar Processo")
         with st.form("novo_proc"):
             c1, c2 = st.columns(2)
             num = c1.text_input("Número Processo")
             rt = c1.text_input("RT")
-            uso = c1.selectbox("Uso", usos_options)
+            uso = c1.selectbox("Uso", usos)
             area = c1.number_input("Área (m²)", min_value=0.0)
-            
             req = c2.text_input("Requerente")
             ana = c2.text_input("Analista")
-            tipo = c2.selectbox("Tipo", tipologias_options)
+            tipo = c2.selectbox("Tipo", tipos)
             data = c2.date_input("Data Protocolo")
             
-            if st.form_submit_button("Salvar", type="primary"):
+            if st.form_submit_button("Salvar Processo"):
                 suc, msg = executar_query(
                     'INSERT INTO processos (numero, rt, requerente, analista, uso, tipologia, area, data_protocolo) VALUES (?,?,?,?,?,?,?,?)',
                     (num, rt, req, ana, uso, tipo, area, data.strftime('%Y-%m-%d')), commit=True
@@ -147,232 +143,200 @@ def main():
                 if suc: st.success("Sucesso!"); st.rerun()
                 else: st.error(f"Erro: {msg}")
 
-    # ABA 2: GERENCIAR
+    # --- ABA 2: GERENCIAR (CORRIGIDO SEM COLUNAS NO BOTÃO) ---
     with tab2:
-        st.header("Editar ou Excluir Processo")
+        st.header("Editar ou Excluir")
         procs = listar_processos()
-        if not procs:
-            st.info("Nenhum processo.")
-        else:
+        if procs:
             opcoes = {f"{p[1]} - {p[3]}": p[0] for p in procs}
-            selecionado = st.selectbox("Selecione o processo:", list(opcoes.keys()))
-            id_selecionado = opcoes[selecionado]
-            dados = buscar_processo(id_selecionado)
+            sel = st.selectbox("Selecione:", list(opcoes.keys()))
+            pid = opcoes[sel]
+            d = buscar_processo(pid)
             
-            if dados:
+            if d:
                 st.markdown("---")
-                with st.form(f"form_edit_{id_selecionado}"):
-                    st.subheader("Editar Dados Cadastrais")
-                    ec1, ec2 = st.columns(2)
-                    enum = ec1.text_input("Número", value=dados[1])
-                    ert = ec1.text_input("RT", value=dados[2])
-                    euso = ec1.selectbox("Uso", usos_options, index=usos_options.index(dados[5]) if dados[5] in usos_options else 0)
-                    earea = ec1.number_input("Área", value=float(dados[7]))
+                with st.form(f"edit_{pid}"):
+                    c1, c2 = st.columns(2)
+                    enum = c1.text_input("Número", d[1])
+                    ert = c1.text_input("RT", d[2])
+                    euso = c1.selectbox("Uso", usos, index=usos.index(d[5]) if d[5] in usos else 0)
+                    earea = c1.number_input("Área", float(d[7]))
                     
-                    ereq = ec2.text_input("Requerente", value=dados[3])
-                    eana = ec2.text_input("Analista", value=dados[4])
-                    etipo = ec2.selectbox("Tipo", tipologias_options, index=tipologias_options.index(dados[6]) if dados[6] in tipologias_options else 0)
-                    edata = ec2.date_input("Data", value=datetime.strptime(dados[8], '%Y-%m-%d').date())
+                    ereq = c2.text_input("Requerente", d[3])
+                    eana = c2.text_input("Analista", d[4])
+                    etipo = c2.selectbox("Tipo", tipos, index=tipos.index(d[6]) if d[6] in tipos else 0)
+                    edata = c2.date_input("Data", datetime.strptime(d[8], '%Y-%m-%d').date())
                     
-                    if st.form_submit_button("💾 Salvar Alterações", type="primary"):
-                        suc, msg = executar_query(
-                            'UPDATE processos SET numero=?, rt=?, requerente=?, analista=?, uso=?, tipologia=?, area=?, data_protocolo=? WHERE id=?',
-                            (enum, ert, ereq, eana, euso, etipo, earea, edata.strftime('%Y-%m-%d'), id_selecionado), commit=True
-                        )
-                        if suc: st.success("Atualizado!"); st.rerun()
-                        else: st.error(f"Erro: {msg}")
+                    st.markdown("---")
+                    # BOTÕES UM EMBAIXO DO OUTRO (SEM COLUNAS) PARA EVITAR ERRO
+                    btn_save = st.form_submit_button("💾 Salvar Alterações", type="primary")
+                    btn_del = st.form_submit_button("🗑️ Deletar Processo", type="secondary")
 
-                st.markdown("### Zona de Perigo")
-                col_del_1, col_del_2 = st.columns([1, 4])
-                with col_del_1:
-                    if st.button("🗑️ Deletar Processo", type="primary"):
-                        st.session_state[f'confirm_del_{id_selecionado}'] = True
-                
-                if st.session_state.get(f'confirm_del_{id_selecionado}'):
-                    st.warning("Tem certeza? Todos os históricos serão apagados.")
-                    if st.button("Sim, confirmar exclusão"):
-                        executar_query('DELETE FROM analises WHERE processo_id=?', (id_selecionado,), commit=True)
-                        executar_query('DELETE FROM tramitacao WHERE processo_id=?', (id_selecionado,), commit=True)
-                        executar_query('DELETE FROM processos WHERE id=?', (id_selecionado,), commit=True)
-                        st.success("Processo deletado.")
-                        st.session_state[f'confirm_del_{id_selecionado}'] = False
-                        st.rerun()
+                    if btn_save:
+                        executar_query('UPDATE processos SET numero=?, rt=?, requerente=?, analista=?, uso=?, tipologia=?, area=?, data_protocolo=? WHERE id=?',
+                                     (enum, ert, ereq, eana, euso, etipo, earea, edata.strftime('%Y-%m-%d'), pid), commit=True)
+                        st.success("Salvo!"); st.rerun()
+                    
+                    if btn_del:
+                        # Gambiarra segura: marca sessão para confirmar fora do form
+                        st.session_state[f'del_{pid}'] = True
 
-    # ABA 3: TRAMITAÇÃO
+                if st.session_state.get(f'del_{pid}'):
+                    st.warning("Confirma a exclusão?")
+                    if st.button("Sim, Excluir Definitivamente"):
+                        executar_query('DELETE FROM tramitacao WHERE processo_id=?', (pid,), commit=True)
+                        executar_query('DELETE FROM analises WHERE processo_id=?', (pid,), commit=True)
+                        executar_query('DELETE FROM processos WHERE id=?', (pid,), commit=True)
+                        st.success("Excluído!"); st.rerun()
+
+    # --- ABA 3: TRAMITAÇÃO (ATUALIZADA COM DATAS LADO A LADO) ---
     with tab3:
         st.header("Tramitação")
         if procs:
-            sel_tram_key = st.selectbox("Processo:", list(opcoes.keys()), key="sel_tram")
-            pid_tram = opcoes[sel_tram_key]
+            sel_key = st.selectbox("Processo:", list(opcoes.keys()), key="tram_sel")
+            pid_tram = opcoes[sel_key]
             
-            # --- FORMULÁRIO DE NOVA MOVIMENTAÇÃO ---
-            with st.form("nova_tram"):
+            # --- NOVA MOVIMENTAÇÃO ---
+            with st.form("new_tram"):
                 st.subheader("Nova Movimentação")
                 c1, c2 = st.columns(2)
-                setor = c1.selectbox("Setor Destino", setores_tramitacao)
-                dt_ent = c1.date_input("Data Entrada no Setor", value=date.today())
+                setor = c1.selectbox("Setor Destino", setores)
+                # OBSERVAÇÃO AO LADO DO SETOR
+                obs = c2.text_area("Observação", height=68) 
                 
-                # OPÇÃO DE SAÍDA IMEDIATA (para lançamentos retroativos)
-                st.markdown("---")
+                # DATAS LADO A LADO NA LINHA DE BAIXO
                 c3, c4 = st.columns(2)
-                ja_saiu = c3.checkbox("Já saiu deste setor? (Histórico antigo)")
+                dt_ent = c3.date_input("📅 Data de Entrada", value=date.today())
+                
+                # CHECKBOX E DATA DE SAÍDA
+                tem_saida = c4.checkbox("Já saiu deste setor? (Histórico)", value=False)
                 dt_sai = None
-                if ja_saiu:
-                    dt_sai = c3.date_input("Data de Saída")
+                if tem_saida:
+                    dt_sai = c4.date_input("📅 Data de Saída", value=date.today())
                 
-                obs = c4.text_area("Observação")
-                
-                if st.form_submit_button("Movimentar Processo"):
-                    # Se NÃO for um histórico antigo (ou seja, é atual), fecha o anterior
-                    if not ja_saiu:
+                if st.form_submit_button("Movimentar"):
+                    # Se não tem data de saída, fecha o anterior e abre este como atual
+                    if not tem_saida:
                         executar_query("UPDATE tramitacao SET data_saida=? WHERE processo_id=? AND data_saida IS NULL", 
                                      (dt_ent.strftime('%Y-%m-%d'), pid_tram), commit=True)
                     
-                    data_saida_db = dt_sai.strftime('%Y-%m-%d') if ja_saiu and dt_sai else None
-                    
+                    saida_val = dt_sai.strftime('%Y-%m-%d') if tem_saida and dt_sai else None
                     executar_query("INSERT INTO tramitacao (processo_id, setor, data_entrada, data_saida, observacao) VALUES (?,?,?,?,?)",
-                                 (pid_tram, setor, dt_ent.strftime('%Y-%m-%d'), data_saida_db, obs), commit=True)
+                                 (pid_tram, setor, dt_ent.strftime('%Y-%m-%d'), saida_val, obs), commit=True)
                     st.success("Movimentado!")
                     st.rerun()
-            
+
+            # --- HISTÓRICO ---
             st.divider()
-            st.subheader("Histórico de Movimentações")
             suc, res = executar_query("SELECT * FROM tramitacao WHERE processo_id=? ORDER BY data_entrada DESC", (pid_tram,))
-            
-            trams_data = []
             if suc:
-                trams_data = res.fetchall()
-                if trams_data:
-                    # Exibir Tabela
-                    df = pd.DataFrame(trams_data, columns=['ID', 'PID', 'Setor', 'Entrada', 'Saída', 'Obs'])
+                rows = res.fetchall()
+                if rows:
+                    df = pd.DataFrame(rows, columns=['ID', 'PID', 'Setor', 'Entrada', 'Saída', 'Obs'])
                     df['Entrada'] = pd.to_datetime(df['Entrada'])
                     df['Saída'] = pd.to_datetime(df['Saída'])
-                    hoje = pd.Timestamp.now().normalize()
-                    df['Dias'] = df.apply(lambda row: ((row['Saída'] if pd.notnull(row['Saída']) else hoje) - row['Entrada']).days, axis=1)
+                    now = pd.Timestamp.now().normalize()
+                    df['Dias'] = df.apply(lambda x: ((x['Saída'] if pd.notnull(x['Saída']) else now) - x['Entrada']).days, axis=1)
                     
+                    # Formatação para exibição
                     df_show = df.copy()
                     df_show['Entrada'] = df_show['Entrada'].dt.strftime('%d/%m/%Y')
                     df_show['Saída'] = df_show['Saída'].dt.strftime('%d/%m/%Y').fillna("Atual")
-                    
                     st.dataframe(df_show[['Setor', 'Entrada', 'Saída', 'Dias', 'Obs']], use_container_width=True)
                     
-                    # --- ÁREA DE EDIÇÃO DO HISTÓRICO ---
-                    st.divider()
+                    # --- EDIÇÃO DO HISTÓRICO ---
                     st.subheader("📝 Editar Histórico")
+                    opts_t = {f"{r[2]} ({pd.to_datetime(r[3]).strftime('%d/%m/%Y')})": r[0] for r in rows}
+                    sel_t = st.selectbox("Selecione para corrigir:", ["Selecione..."] + list(opts_t.keys()))
                     
-                    opcoes_trams = {f"{t[2]} ({pd.to_datetime(t[3]).strftime('%d/%m/%Y')})": t[0] for t in trams_data}
-                    sel_t_label = st.selectbox("Selecione a movimentação para corrigir:", ["Selecione..."] + list(opcoes_trams.keys()))
-                    
-                    if sel_t_label != "Selecione...":
-                        tid_edit = opcoes_trams[sel_t_label]
-                        row_edit = next((t for t in trams_data if t[0] == tid_edit), None)
-                        
-                        if row_edit:
-                            with st.form(f"form_edit_tram_{tid_edit}"):
-                                col_e1, col_e2 = st.columns(2)
+                    if sel_t != "Selecione...":
+                        tid = opts_t[sel_t]
+                        r = next((x for x in rows if x[0] == tid), None)
+                        if r:
+                            with st.form(f"edit_tram_{tid}"):
+                                ec1, ec2 = st.columns(2)
+                                esetor = ec1.selectbox("Setor", setores, index=setores.index(r[2]) if r[2] in setores else 0)
+                                eobs = ec2.text_input("Observação", r[5] or "")
                                 
-                                idx_setor = setores_tramitacao.index(row_edit[2]) if row_edit[2] in setores_tramitacao else 0
-                                e_setor = col_e1.selectbox("Setor", setores_tramitacao, index=idx_setor)
+                                # DATAS LADO A LADO NA EDIÇÃO
+                                ec3, ec4 = st.columns(2)
+                                edtent = ec3.date_input("Data Entrada", datetime.strptime(r[3], '%Y-%m-%d').date())
                                 
-                                e_dt_ent_val = datetime.strptime(row_edit[3], '%Y-%m-%d').date() if row_edit[3] else date.today()
-                                e_dt_ent = col_e1.date_input("Data Entrada", value=e_dt_ent_val)
-                                
-                                # Lógica Data Saída na Edição
-                                has_exit_date = col_e2.checkbox("Definir Data de Saída?", value=bool(row_edit[4]))
-                                e_dt_sai = None
-                                if has_exit_date:
-                                    e_dt_sai_val = datetime.strptime(row_edit[4], '%Y-%m-%d').date() if row_edit[4] else date.today()
-                                    e_dt_sai = col_e2.date_input("Data Saída", value=e_dt_sai_val)
-                                
-                                e_obs = st.text_area("Observação", value=row_edit[5] if row_edit[5] else "")
+                                # Lógica Data Saída
+                                has_exit = ec4.checkbox("Definir Saída?", value=bool(r[4]))
+                                edtsai = None
+                                if has_exit:
+                                    val_sai = datetime.strptime(r[4], '%Y-%m-%d').date() if r[4] else date.today()
+                                    edtsai = ec4.date_input("Data Saída", val_sai)
                                 
                                 st.markdown("---")
-                                # BOTÕES FORA DE COLUNAS PARA EVITAR O ERRO
-                                if st.form_submit_button("💾 Salvar Correção", type="primary"):
-                                    saida_db = e_dt_sai.strftime('%Y-%m-%d') if has_exit_date and e_dt_sai else None
+                                # BOTÕES SEM COLUNAS
+                                btn_t_save = st.form_submit_button("Salvar Correção", type="primary")
+                                btn_t_del = st.form_submit_button("Excluir Movimentação")
+                                
+                                if btn_t_save:
+                                    s_val = edtsai.strftime('%Y-%m-%d') if has_exit and edtsai else None
                                     executar_query("UPDATE tramitacao SET setor=?, data_entrada=?, data_saida=?, observacao=? WHERE id=?",
-                                                 (e_setor, e_dt_ent.strftime('%Y-%m-%d'), saida_db, e_obs, tid_edit), commit=True)
-                                    st.success("Movimentação atualizada!")
+                                                 (esetor, edtent.strftime('%Y-%m-%d'), s_val, eobs, tid), commit=True)
+                                    st.success("Atualizado!")
                                     st.rerun()
-                                    
-                                if st.form_submit_button("🗑️ Excluir Movimentação", type="danger"):
-                                    executar_query("DELETE FROM tramitacao WHERE id=?", (tid_edit,), commit=True)
-                                    st.success("Movimentação removida!")
+                                if btn_t_del:
+                                    executar_query("DELETE FROM tramitacao WHERE id=?", (tid,), commit=True)
+                                    st.success("Apagado!")
                                     st.rerun()
 
-                else:
-                    st.info("Sem histórico para exibir ou editar.")
-
-    # ABA 4: KANBAN
+    # --- ABA 4: KANBAN ---
     with tab4:
         st.header("Kanban")
         cols = st.columns(5)
-        status_list = ['Protocolado', 'Em Análise', 'Aguardando Correções', 'Aprovado', 'Reprovado']
-        
-        for idx, stat in enumerate(status_list):
-            with cols[idx]:
-                st.caption(f"**{stat}**")
-                filtro = [p for p in procs if p[9] == stat]
-                for p in filtro:
+        stats = ['Protocolado', 'Em Análise', 'Aguardando Correções', 'Aprovado', 'Reprovado']
+        for i, s in enumerate(stats):
+            with cols[i]:
+                st.caption(f"**{s}**")
+                for p in [x for x in procs if x[9] == s]:
                     with st.container(border=True):
-                        st.write(f"**{p[1]}**")
-                        st.write(p[3])
-                        if idx < 4:
-                            if st.button("➡️", key=f"next_{p[0]}"):
-                                executar_query("UPDATE processos SET status=? WHERE id=?", (status_list[idx+1], p[0]), commit=True)
+                        st.write(f"**{p[1]}**\n{p[3]}")
+                        if i < 4:
+                            if st.button("➡️", key=f"k_{p[0]}"):
+                                executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
                                 st.rerun()
 
-    # ABA 5: IA
+    # --- ABA 5: IA ---
     with tab5:
         st.header("Análise IA")
-        if not api_key:
-            st.warning("Insira API Key.")
+        if not api_key: st.warning("Sem API Key.")
         elif procs:
-            sel_ia_key = st.selectbox("Processo:", list(opcoes.keys()), key="sel_ia")
-            pid_ia = opcoes[sel_ia_key]
+            pid_ia = opcoes[st.selectbox("Processo:", list(opcoes.keys()), key="ia_sel")]
             d_ia = buscar_processo(pid_ia)
-            upload_proj = st.file_uploader("PDF Projeto", type='pdf')
-            upload_lei = st.file_uploader("PDF Lei", type='pdf')
-            
-            if st.button("Analisar") and upload_proj and upload_lei:
+            up_p = st.file_uploader("Projeto (PDF)", type='pdf')
+            up_l = st.file_uploader("Lei (PDF)", type='pdf')
+            if st.button("Analisar") and up_p and up_l:
                 with st.spinner("Analisando..."):
                     try:
-                        txt_p = PyPDF2.PdfReader(upload_proj).pages[0].extract_text()
-                        txt_l = PyPDF2.PdfReader(upload_lei).pages[0].extract_text()
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        res = model.generate_content(f"Analise projeto {d_ia[1]} vs Lei.\nLei: {txt_l[:2000]}\nProj: {txt_p[:2000]}")
+                        tp = PyPDF2.PdfReader(up_p).pages[0].extract_text()
+                        tl = PyPDF2.PdfReader(up_l).pages[0].extract_text()
+                        mod = genai.GenerativeModel('gemini-1.5-flash')
+                        res = mod.generate_content(f"Analise {d_ia[1]} vs Lei.\nLei: {tl[:3000]}\nProj: {tp[:3000]}")
                         st.markdown(res.text)
-                    except Exception as e: st.error(f"Erro: {e}")
+                    except Exception as e: st.error(e)
 
-    # ABA 6: DASHBOARD
+    # --- ABA 6: DASHBOARD ---
     with tab6:
-        st.header("📈 Dashboard Gerencial")
-        if pd is None or px is None:
-            st.error("Bibliotecas gráficas não disponíveis.")
-        else:
-            df_dash = get_processos_df()
-            if not df_dash.empty:
+        st.header("Dashboard")
+        if pd is not None and px is not None:
+            df = get_processos_df()
+            if not df.empty:
                 c1, c2, c3, c4 = st.columns(4)
-                total = len(df_dash)
-                area = df_dash['area'].sum()
-                aprov = len(df_dash[df_dash['status'] == 'Aprovado'])
-                dias = (pd.Timestamp.now() - df_dash['data_protocolo']).dt.days.mean()
-                
-                c1.metric("Total", total)
-                c2.metric("Área Total", f"{area:,.2f}")
-                c3.metric("Aprovados", aprov)
+                c1.metric("Total", len(df))
+                c2.metric("Área Total", f"{df['area'].sum():,.0f} m²")
+                c3.metric("Aprovados", len(df[df['status']=='Aprovado']))
+                dias = (pd.Timestamp.now() - df['data_protocolo']).dt.days.mean()
                 c4.metric("Média Dias", f"{dias:.0f}")
                 
-                st.markdown("---")
+                st.divider()
                 g1, g2 = st.columns(2)
-                with g1:
-                    fig = px.pie(df_dash['status'].value_counts().reset_index(), values='count', names='status', title='Status')
-                    st.plotly_chart(fig, use_container_width=True)
-                with g2:
-                    fig = px.bar(df_dash['uso'].value_counts().reset_index(), x='count', y='uso', orientation='h', title='Uso')
-                    st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Cadastre processos para ver os indicadores.")
+                g1.plotly_chart(px.pie(df, names='status', title='Status'), use_container_width=True)
+                g2.plotly_chart(px.bar(df['uso'].value_counts().reset_index(), x='count', y='uso', orientation='h', title='Uso'), use_container_width=True)
 
 if __name__ == "__main__":
     main()
