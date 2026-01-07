@@ -4,6 +4,7 @@ import PyPDF2
 from datetime import datetime, timedelta
 import sqlite3
 import os
+# Removido bcrypt pois a gestão de usuários foi simplificada
 
 # ==================== Importação de bibliotecas opcionais (para gráficos) ====================
 try:
@@ -23,18 +24,22 @@ if 'db_reset_needed_rerun' not in st.session_state:
     st.session_state['db_reset_needed_rerun'] = False
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
-if 'username' not in st.session_state: 
+if 'username' not in st.session_state: # Adicionado para armazenar o nome de usuário logado
     st.session_state['username'] = None
 
 if st.session_state['db_reset_needed_rerun']:
     st.session_state['db_reset_needed_rerun'] = False
     st.rerun()
- 
+
 # ==================== BANCO DE DADOS ====================
+
+# A função reset_database foi removida para simplificar e evitar o erro persistente.
+# Se precisar resetar o banco, você terá que deletar o arquivo 'processos.db' manualmente no ambiente do Streamlit Share
+# (se tiver acesso aos arquivos) ou recriar o app.
 
 @st.cache_resource
 def init_db():
-    """Inicializa o banco de dados, criando tabelas se não existirem."""
+    """Inicializa o banco de dados, criando tabelas se não existirem ou se o schema estiver desatualizado."""
     try:
         conn = sqlite3.connect('processos.db', check_same_thread=False)
         c = conn.cursor()
@@ -65,6 +70,7 @@ def init_db():
             c.execute('DROP TABLE IF EXISTS tramitacao')
             c.execute('DROP TABLE IF EXISTS analises')
             c.execute('DROP TABLE IF EXISTS processos')
+            # Removido 'DROP TABLE IF EXISTS users' pois a tabela de usuários não será mais usada
             conn.commit()
 
             c.execute('''CREATE TABLE processos (
@@ -101,6 +107,8 @@ def init_db():
             FOREIGN KEY (processo_id) REFERENCES processos(id)
         )''')
 
+        # Removida a criação da tabela 'users'
+
         conn.commit()
         return conn
     except Exception as e:
@@ -112,6 +120,7 @@ conn = init_db()
 # ==================== FUNÇÕES CRUD (PROCESSOS) ====================
 
 def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
+    """Cadastra um novo processo no banco de dados."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -127,6 +136,7 @@ def cadastrar(numero, rt, requerente, analista, uso, tipologia, area, data_proto
         return False, f"❌ Erro ao cadastrar: {str(e)}"
 
 def listar():
+    """Lista todos os processos cadastrados."""
     if not conn: return []
     try:
         c = conn.cursor()
@@ -137,6 +147,7 @@ def listar():
         return []
 
 def buscar_por_numero(numero):
+    """Busca um processo pelo número."""
     if not conn: return None
     try:
         c = conn.cursor()
@@ -147,6 +158,7 @@ def buscar_por_numero(numero):
         return []
 
 def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_protocolo):
+    """Atualiza os dados de um processo existente."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -162,6 +174,7 @@ def atualizar(pid, numero, rt, requerente, analista, uso, tipologia, area, data_
         return False, f"❌ Erro ao atualizar processo: {str(e)}"
 
 def deletar(pid):
+    """Deleta um processo e suas tramitações/análises associadas."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -174,6 +187,7 @@ def deletar(pid):
         return False, f"❌ Erro ao deletar processo: {str(e)}" 
 
 def atualizar_status(pid, novo_status):
+    """Atualiza o status de um processo."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -186,14 +200,17 @@ def atualizar_status(pid, novo_status):
 # ==================== FUNÇÕES CRUD (TRAMITAÇÃO) ====================
 
 def registrar_tramitacao(processo_id, setor, data_entrada, data_saida=None, observacao=""):
+    """Registra uma nova movimentação de tramitação para um processo."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
+        # Atualiza a data de saída da última tramitação aberta para este processo
         c.execute('''UPDATE tramitacao 
                     SET data_saida = ? 
                     WHERE processo_id = ? AND data_saida IS NULL''', 
-                 (data_entrada.strftime('%Y-%m-%d'), processo_id))
+                 (data_entrada.strftime('%Y-%m-%d'), processo_id)) # Formata data_entrada para string
 
+        # Insere a nova tramitação
         c.execute('''INSERT INTO tramitacao 
                     (processo_id, setor, data_entrada, data_saida, observacao) 
                     VALUES (?, ?, ?, ?, ?)''',
@@ -204,6 +221,7 @@ def registrar_tramitacao(processo_id, setor, data_entrada, data_saida=None, obse
         return False, f"❌ Erro ao registrar tramitação: {str(e)}"
 
 def listar_tramitacao(processo_id):
+    """Lista as tramitações de um processo específico."""
     if not conn: return []
     try:
         c = conn.cursor()
@@ -214,6 +232,7 @@ def listar_tramitacao(processo_id):
         return []
 
 def atualizar_tramitacao(tid, setor, data_entrada, data_saida, observacao):
+    """Atualiza uma movimentação de tramitação existente."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -227,6 +246,7 @@ def atualizar_tramitacao(tid, setor, data_entrada, data_saida, observacao):
         return False, f"❌ Erro ao atualizar movimentação: {str(e)}"
 
 def deletar_tramitacao(tid):
+    """Deleta uma movimentação de tramitação."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -239,6 +259,7 @@ def deletar_tramitacao(tid):
 # ==================== FUNÇÕES CRUD (ANÁLISES) ====================
 
 def salvar_analise(processo_id, resultado, status):
+    """Salva o resultado de uma análise no banco de dados."""
     if not conn: return False, "❌ Erro de conexão com o banco!"
     try:
         c = conn.cursor()
@@ -251,6 +272,7 @@ def salvar_analise(processo_id, resultado, status):
         return False, f"❌ Erro ao salvar análise: {str(e)}"
 
 def listar_analises(processo_id):
+    """Lista as análises de um processo específico."""
     if not conn: return []
     try:
         c = conn.cursor()
@@ -262,6 +284,7 @@ def listar_analises(processo_id):
 
 # ==================== FUNÇÕES DE GRÁFICOS ====================
 def get_processos_df():
+    """Carrega todos os processos para um DataFrame do pandas."""
     if not conn or pd is None: return pd.DataFrame()
     try:
         df = pd.read_sql_query("SELECT * FROM processos", conn)
@@ -273,6 +296,7 @@ def get_processos_df():
         return pd.DataFrame()
 
 def get_tramitacoes_df():
+    """Carrega todas as tramitações para um DataFrame do pandas."""
     if not conn or pd is None: return pd.DataFrame()
     try:
         df = pd.read_sql_query("SELECT * FROM tramitacao", conn)
@@ -287,6 +311,7 @@ def get_tramitacoes_df():
 # ==================== TELAS DE LOGIN ====================
 
 def login_form():
+    """Exibe o formulário de login."""
     st.title("Login no Sistema de Validação 🏛️")
     st.markdown("---")
 
@@ -318,6 +343,7 @@ def login_form():
 # ==================== CONTEÚDO PRINCIPAL DO APP ====================
 
 def main_app_content():
+    """Conteúdo principal do aplicativo após o login."""
     # Opções para os campos de seleção
     usos_options = ["Unifamiliar", "Multifamiliar", "Serviços", "Comércio Varejista", "Comércio Atacadista", "Indústria", "Misto", "Sem destinação específica"]
     tipologias_options = ["Aprovação Inicial", "Levantamento Existente", "Modificação de Projeto", "Regularização", "Misto", "RIU", "ERB", "As Built"]
@@ -329,13 +355,16 @@ def main_app_content():
     st.sidebar.image("https://www.contagem.mg.gov.br/portal/uploads/2023/07/logo-contagem-2023.png", width=200)
     st.sidebar.markdown("---")
 
-    if st.sidebar.button("Sair", type="secondary", key="sidebar_logout_button"): 
+    if st.sidebar.button("Sair", type="secondary", key="sidebar_logout_button"): # Adicionada chave explícita
         st.session_state['logged_in'] = False
         st.session_state['username'] = None
         st.rerun()
 
     st.sidebar.markdown("---")
-    
+    # O botão "Resetar Banco de Dados" e sua função foram removidos para simplificar e evitar erros persistentes.
+    # st.sidebar.button("Resetar Banco de Dados (CUIDADO!)", type="danger", key="sidebar_reset_db_button")
+
+    st.sidebar.markdown("---")
     st.sidebar.subheader("⚙️ Configurações de IA")
     st.session_state['api_key'] = st.sidebar.text_input(
         "Sua API Key do Google Gemini:",
@@ -356,6 +385,7 @@ def main_app_content():
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "➕ Cadastrar", "📝 Listar", "🔄 Tramitação", "📊 Kanban", "🤖 Análise IA", "📈 Gráficos"
     ])
+    # Removida a tab "Gerenciar Usuários"
 
     # ==================== ABA 1: CADASTRAR ====================
     with tab1:
@@ -431,33 +461,33 @@ def main_app_content():
                             edit_tipologia = st.selectbox("Tipologia", tipologias_options, index=tipologias_options.index(dados_processo[6]), key=f"edit_tipologia_{pid_selecionado}")
                             edit_data_protocolo = st.date_input("Data do Protocolo", value=datetime.strptime(dados_processo[8], '%Y-%m-%d').date(), key=f"edit_data_protocolo_{pid_selecionado}")
 
-                        st.markdown("---")
-                        # CORREÇÃO DEFINITIVA: Botões fora de colunas para evitar erro de indentação
-                        submitted_update = st.form_submit_button("Atualizar Processo", type="primary", use_container_width=True, key=f"submit_update_{pid_selecionado}")
-                        submitted_delete = st.form_submit_button("Deletar Processo", type="danger", use_container_width=True, key=f"submit_delete_{pid_selecionado}")
+                        col_upd, col_del = st.columns(2)
+                        with col_upd:
+                            submitted_update = st.form_submit_button("Atualizar Processo", type="primary", use_container_width=True, key=f"submit_update_{pid_selecionado}")
+                        with col_del:
+                            submitted_delete = st.form_submit_button("Deletar Processo", type="danger", use_container_width=True, key=f"submit_delete_{pid_selecionado}")
 
-                    # A lógica de processamento fica FORA do form
-                    if submitted_update:
-                        if edit_numero and edit_rt and edit_requerente and edit_analista and edit_uso and edit_tipologia and edit_area is not None and edit_data_protocolo:
-                            sucesso, msg = atualizar(pid_selecionado, edit_numero, edit_rt, edit_requerente, edit_analista, edit_uso, edit_tipologia, edit_area, edit_data_protocolo.strftime('%Y-%m-%d'))
-                            if sucesso:
-                                st.success(msg)
-                                st.rerun()
+                        if submitted_update:
+                            if edit_numero and edit_rt and edit_requerente and edit_analista and edit_uso and edit_tipologia and edit_area is not None and edit_data_protocolo:
+                                sucesso, msg = atualizar(pid_selecionado, edit_numero, edit_rt, edit_requerente, edit_analista, edit_uso, edit_tipologia, edit_area, edit_data_protocolo.strftime('%Y-%m-%d'))
+                                if sucesso:
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
                             else:
-                                st.error(msg)
-                        else:
-                            st.error("❌ Por favor, preencha todos os campos para atualizar.")
+                                st.error("❌ Por favor, preencha todos os campos para atualizar.")
 
-                    if submitted_delete:
-                        st.warning(f"Tem certeza que deseja deletar o processo {dados_processo[1]}? Todas as tramitações e análises associadas também serão deletadas.")
-                        confirm_deletion = st.checkbox("Sim, eu confirmo a deleção deste processo.", key=f"confirm_checkbox_delete_{pid_selecionado}")
-                        if confirm_deletion:
-                            sucesso, msg = deletar(pid_selecionado)
-                            if sucesso:
-                                st.success(msg)
-                                st.rerun()
-                            else:
-                                st.error(msg)
+                        if submitted_delete:
+                            st.warning(f"Tem certeza que deseja deletar o processo {dados_processo[1]}? Todas as tramitações e análises associadas também serão deletadas.")
+                            confirm_deletion = st.checkbox("Sim, eu confirmo a deleção deste processo.", key=f"confirm_checkbox_delete_{pid_selecionado}")
+                            if confirm_deletion: # A deleção só ocorre se o checkbox for marcado
+                                sucesso, msg = deletar(pid_selecionado)
+                                if sucesso:
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
 
     # ==================== ABA 3: TRAMITAÇÃO ====================
     with tab3:
@@ -536,11 +566,12 @@ def main_app_content():
                                         edit_data_saida_val = datetime.strptime(dados_tramitacao[4], '%Y-%m-%d').date() if dados_tramitacao[4] else None
                                         edit_data_saida = st.date_input("Data de Saída (Opcional)", value=edit_data_saida_val, key=f"edit_tram_data_saida_{tramitacao_selecionada_id}")
                                         edit_observacao = st.text_area("Observação", value=dados_tramitacao[5], key=f"edit_tram_obs_{tramitacao_selecionada_id}")
-                                    
-                                    # Simplificado aqui também para evitar problemas futuros
-                                    st.markdown("---")
-                                    submitted_update_tram = st.form_submit_button("Atualizar Movimentação", type="primary", use_container_width=True, key=f"submit_update_tram_{tramitacao_selecionada_id}")
-                                    submitted_delete_tram = st.form_submit_button("Deletar Movimentação", type="danger", use_container_width=True, key=f"submit_delete_tram_{tramitacao_selecionada_id}")
+
+                                    col_upd_tram, col_del_tram = st.columns(2)
+                                    with col_upd_tram:
+                                        submitted_update_tram = st.form_submit_button("Atualizar Movimentação", type="primary", use_container_width=True, key=f"submit_update_tram_{tramitacao_selecionada_id}")
+                                    with col_del_tram:
+                                        submitted_delete_tram = st.form_submit_button("Deletar Movimentação", type="danger", use_container_width=True, key=f"submit_delete_tram_{tramitacao_selecionada_id}")
 
                                     if submitted_update_tram:
                                         if edit_setor and edit_data_entrada:
@@ -556,7 +587,7 @@ def main_app_content():
                                     if submitted_delete_tram:
                                         st.warning(f"Tem certeza que deseja deletar a movimentação ID {dados_tramitacao[0]}?")
                                         confirm_tram_deletion = st.checkbox("Sim, eu confirmo a deleção desta movimentação.", key=f"confirm_checkbox_delete_tram_{tramitacao_selecionada_id}")
-                                        if confirm_tram_deletion: 
+                                        if confirm_tram_deletion: # A deleção só ocorre se o checkbox for marcado
                                             sucesso, msg = deletar_tramitacao(tramitacao_selecionada_id)
                                             if sucesso:
                                                 st.success(msg)
@@ -615,90 +646,90 @@ def main_app_content():
                                 else: st.error(msg)
                         st.markdown("---")
 
-    # ==================== ABA 5: ANÁLISE IA ====================
     with tab5:
         st.header("🤖 Análise de Projetos com IA")
 
         if not st.session_state['api_key']:
             st.warning("⚠️ Configure sua API Key do Google Gemini na barra lateral para usar esta função.")
             st.info("Como obter: Acesse https://aistudio.google.com/app/apikey e crie uma chave gratuita.")
+            st.stop()
+
+        processos_analise = listar()
+        if not processos_analise:
+            st.info("📭 Nenhum processo cadastrado para análise.")
         else:
-            processos_analise = listar()
-            if not processos_analise:
-                st.info("📭 Nenhum processo cadastrado para análise.")
-            else:
-                processo_selecionado_analise = st.selectbox(
-                    "Selecione o Processo para Análise:",
-                    options=[(p[0], p[1]) for p in processos_analise],
-                    format_func=lambda x: f"{x[1]} - {buscar_por_numero(x[1])[3]}",
-                    key="select_processo_analise"
-                )
+            processo_selecionado_analise = st.selectbox(
+                "Selecione o Processo para Análise:",
+                options=[(p[0], p[1]) for p in processos_analise],
+                format_func=lambda x: f"ID: {x[0]} - Número: {x[1]}",
+                key="select_processo_analise"
+            )
 
-                if processo_selecionado_analise:
-                    pid_analise = processo_selecionado_analise[0]
-                    dados = buscar_por_numero(processo_selecionado_analise[1])
+            if processo_selecionado_analise:
+                pid_analise = processo_selecionado_analise[0]
+                dados = buscar_por_numero(processo_selecionado_analise[1])
 
-                    if dados:
-                        st.subheader(f"Analisando Processo: {dados[1]} - Requerente: {dados[3]}")
-                        st.markdown(f"**Status Atual:** {dados[9]}")
+                if dados:
+                    st.subheader(f"Analisando Processo: {dados[1]} - Requerente: {dados[3]}")
+                    st.markdown(f"**Status Atual:** {dados[9]}")
 
-                        st.divider()
-                        st.markdown("#### 📄 Anexar Documentos")
-                        col_proj, col_leg = st.columns(2)
-                        with col_proj:
-                            st.subheader("🏗️ Projeto Arquitetônico")
-                            proj = st.file_uploader("PDFs do Projeto", type=['pdf'], accept_multiple_files=True, key="proj_upload")
-                        with col_leg:
-                            st.subheader("📜 Legislação Municipal")
-                            leg = st.file_uploader("PDFs da Legislação", type=['pdf'], accept_multiple_files=True, key="leg_upload")
+                    st.divider()
+                    st.markdown("#### 📄 Anexar Documentos")
+                    col_proj, col_leg = st.columns(2)
+                    with col_proj:
+                        st.subheader("🏗️ Projeto Arquitetônico")
+                        proj = st.file_uploader("PDFs do Projeto", type=['pdf'], accept_multiple_files=True, key="proj_upload")
+                    with col_leg:
+                        st.subheader("📜 Legislação Municipal")
+                        leg = st.file_uploader("PDFs da Legislação", type=['pdf'], accept_multiple_files=True, key="leg_upload")
 
-                        st.divider()
-                        regras = st.text_area("📏 Regras Específicas a Verificar (Artigos da Lei, etc.):", height=150, 
-                                            placeholder="Ex: Art. 10 - Área mínima de 50m² para lotes residenciais. Art. 15 - Recuo frontal de 3m.",
-                                            key="regras_ia")
+                    st.divider()
+                    regras = st.text_area("📏 Regras Específicas a Verificar (Artigos da Lei, etc.):", height=150, 
+                                          placeholder="Ex: Art. 10 - Área mínima de 50m² para lotes residenciais. Art. 15 - Recuo frontal de 3m.",
+                                          key="regras_ia")
 
-                        st.divider()
+                    st.divider()
 
-                        if st.button("🔍 INICIAR ANÁLISE COM IA", type="primary", use_container_width=True):
-                            if not st.session_state['api_key']:
-                                st.error("❌ Por favor, insira sua API Key do Google Gemini na barra lateral para iniciar a análise.")
-                            elif not proj:
-                                st.error("❌ Anexe pelo menos 1 PDF do projeto!")
-                            elif not leg:
-                                st.error("❌ Anexe pelo menos 1 PDF da legislação!")
-                            elif not regras:
-                                st.error("❌ Digite as regras que devem ser verificadas!")
-                            else:
-                                with st.spinner("🤖 Analisando projeto com Inteligência Artificial... Isso pode levar alguns minutos..."):
-                                    try:
-                                        genai.configure(api_key=st.session_state['api_key'])
+                    if st.button("🔍 INICIAR ANÁLISE COM IA", type="primary", use_container_width=True):
+                        if not st.session_state['api_key']:
+                            st.error("❌ Por favor, insira sua API Key do Google Gemini na barra lateral para iniciar a análise.")
+                        elif not proj:
+                            st.error("❌ Anexe pelo menos 1 PDF do projeto!")
+                        elif not leg:
+                            st.error("❌ Anexe pelo menos 1 PDF da legislação!")
+                        elif not regras:
+                            st.error("❌ Digite as regras que devem ser verificadas!")
+                        else:
+                            with st.spinner("🤖 Analisando projeto com Inteligência Artificial... Isso pode levar alguns minutos..."):
+                                try:
+                                    genai.configure(api_key=st.session_state['api_key'])
 
-                                        txt_proj = ""
-                                        for pdf in proj:
-                                            reader = PyPDF2.PdfReader(pdf)
-                                            for page in reader.pages:
-                                                txt_proj += page.extract_text() or ""
+                                    txt_proj = ""
+                                    for pdf in proj:
+                                        reader = PyPDF2.PdfReader(pdf)
+                                        for page in reader.pages:
+                                            txt_proj += page.extract_text() or ""
 
-                                        txt_leg = ""
-                                        for pdf in leg:
-                                            reader = PyPDF2.PdfReader(pdf)
-                                            for page in reader.pages:
-                                                txt_leg += page.extract_text() or ""
+                                    txt_leg = ""
+                                    for pdf in leg:
+                                        reader = PyPDF2.PdfReader(pdf)
+                                        for page in reader.pages:
+                                            txt_leg += page.extract_text() or ""
 
-                                        model = None
-                                        for nome in ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']:
-                                            try:
-                                                model = genai.GenerativeModel(nome)
-                                                st.info(f"✅ Usando modelo: {nome}")
-                                                break
-                                            except Exception as e:
-                                                continue
-                                        
-                                        if not model:
-                                            st.error("❌ Nenhum modelo do Gemini disponível. Verifique sua API Key e a disponibilidade dos modelos.")
-                                            st.stop()
+                                    model = None
+                                    for nome in ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']:
+                                        try:
+                                            model = genai.GenerativeModel(nome)
+                                            st.info(f"✅ Usando modelo: {nome}")
+                                            break
+                                        except Exception as e:
+                                            continue
 
-                                        prompt = f"""Você é um analista técnico especializado em projetos arquitetônicos para aprovação em prefeituras.
+                                    if not model:
+                                        st.error("❌ Nenhum modelo do Gemini disponível. Verifique sua API Key e a disponibilidade dos modelos.")
+                                        st.stop()
+
+                                    prompt = f"""Você é um analista técnico especializado em projetos arquitetônicos para aprovação em prefeituras.
 Analise o texto do projeto arquitetônico fornecido abaixo, considerando as seguintes informações do processo:
 
 - **Número do Processo:** {dados[1]}
@@ -716,9 +747,9 @@ O parecer deve incluir:
 2.  **Conformidade:** Pontos em que o projeto parece estar em conformidade com normas gerais de construção e urbanismo (ex: recuos, taxa de ocupação, coeficiente de aproveitamento, ventilação, iluminação, acessibilidade, etc.).
 3.  **Não Conformidade/Pendências:** Pontos que precisam de correção ou esclarecimento para a aprovação. Seja específico sobre quais itens estão em desacordo ou quais informações estão faltando.
 4.  **Recomendação Final:**
-    * Se o projeto parece estar em total conformidade e pronto para aprovação, termine o parecer com a frase **"RECOMENDAÇÃO: PROJETO APROVADO"**.
-    * Se o projeto possui pendências ou não conformidades que exigem correção, termine o parecer com a frase **"RECOMENDAÇÃO: PROJETO REPROVADO"**.
-    * Se a análise for inconclusiva devido à falta de informações críticas no PDF ou se o PDF for apenas parcial, termine o parecer com a frase **"RECOMENDAÇÃO: ANÁLISE INCONCLUSIVA"**.
+    *   Se o projeto parece estar em total conformidade e pronto para aprovação, termine o parecer com a frase **"RECOMENDAÇÃO: PROJETO APROVADO"**.
+    *   Se o projeto possui pendências ou não conformidades que exigem correção, termine o parecer com a frase **"RECOMENDAÇÃO: PROJETO REPROVADO"**.
+    *   Se a análise for inconclusiva devido à falta de informações críticas no PDF ou se o PDF for apenas parcial, termine o parecer com a frase **"RECOMENDAÇÃO: ANÁLISE INCONCLUSIVA"**.
 
 ---
 **TEXTO DO PROJETO ARQUITETÔNICO:**
@@ -726,30 +757,30 @@ O parecer deve incluir:
 ---
 """
 
-                                        resposta = model.generate_content(prompt)
+                                    resposta = model.generate_content(prompt)
 
-                                        texto_resposta = resposta.text
+                                    texto_resposta = resposta.text
 
-                                        status_analise = "INCONCLUSIVO"
-                                        if "APROVADO" in texto_resposta.upper() and "REPROVADO" not in texto_resposta.upper():
-                                            status_analise = "APROVADO"
-                                            st.success("✅ PROJETO APROVADO")
-                                            atualizar_status(dados[0], "Aprovado")
-                                        elif "REPROVADO" in texto_resposta.upper():
-                                            status_analise = "REPROVADO"
-                                            st.error("❌ PROJETO REPROVADO")
-                                            atualizar_status(dados[0], "Reprovado")
-                                        else:
-                                            st.warning("⚠️ ANÁLISE INCONCLUSIVA")
-                                            atualizar_status(dados[0], "Em Análise")
+                                    status_analise = "INCONCLUSIVO"
+                                    if "APROVADO" in texto_resposta.upper() and "REPROVADO" not in texto_resposta.upper():
+                                        status_analise = "APROVADO"
+                                        st.success("✅ PROJETO APROVADO")
+                                        atualizar_status(dados[0], "Aprovado")
+                                    elif "REPROVADO" in texto_resposta.upper():
+                                        status_analise = "REPROVADO"
+                                        st.error("❌ PROJETO REPROVADO")
+                                        atualizar_status(dados[0], "Reprovado")
+                                    else:
+                                        st.warning("⚠️ ANÁLISE INCONCLUSIVA")
+                                        atualizar_status(dados[0], "Em Análise")
 
-                                        st.divider()
+                                    st.divider()
 
-                                        st.markdown(resposta.text)
+                                    st.markdown(resposta.text)
 
-                                        salvar_analise(dados[0], resposta.text, status_analise)
+                                    salvar_analise(dados[0], resposta.text, status_analise)
 
-                                        relatorio = f"""PREFEITURA DE CONTAGEM - MG
+                                    relatorio = f"""PREFEITURA DE CONTAGEM - MG
 RELATÓRIO DE ANÁLISE TÉCNICA DE PROJETO ARQUITETÔNICO
 
 Processo: {dados[1]}
@@ -772,22 +803,21 @@ Relatório gerado automaticamente por Inteligência Artificial (Google Gemini)
 Sistema de Validação de Processos - Prefeitura de Contagem
 """
 
-                                        st.divider()
+                                    st.divider()
 
-                                        st.download_button(
-                                            label="📥 BAIXAR RELATÓRIO COMPLETO (TXT)",
-                                            data=relatorio,
-                                            file_name=f"relatorio_processo_{dados[1].replace('.', '_').replace('/', '_')}.txt",
-                                            mime="text/plain",
-                                            type="primary",
-                                            use_container_width=True
-                                        )
+                                    st.download_button(
+                                        label="📥 BAIXAR RELATÓRIO COMPLETO (TXT)",
+                                        data=relatorio,
+                                        file_name=f"relatorio_processo_{dados[1].replace('.', '_').replace('/', '_')}.txt",
+                                        mime="text/plain",
+                                        type="primary",
+                                        use_container_width=True
+                                    )
 
-                                    except Exception as erro:
-                                        st.error(f"❌ Erro durante a análise: {str(erro)}")
-                                        st.info("Verifique se sua API Key está correta e a disponibilidade dos modelos do Gemini.")
+                                except Exception as erro:
+                                    st.error(f"❌ Erro durante a análise: {str(erro)}")
+                                    st.info("Verifique se sua API Key está correta e a disponibilidade dos modelos do Gemini.")
 
-    # ==================== ABA 6: GRÁFICOS ====================
     with tab6:
         st.header("📈 Análise Gráfica dos Processos")
 
