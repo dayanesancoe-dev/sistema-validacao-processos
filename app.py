@@ -351,7 +351,7 @@ def main():
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
                                 st.rerun()
 
-    # --- ABA 5: IA (UPDATED: MULTIPLE FILES) ---
+    # --- ABA 5: IA (UPDATED: AUTO-FALLBACK MODELS) ---
     with tab5:
         st.header("Análise IA")
         if not api_key: st.warning("Sem API Key.")
@@ -359,54 +359,54 @@ def main():
             pid_ia = opcoes[st.selectbox("Processo:", list(opcoes.keys()), key="ia_sel")]
             d_ia = buscar_processo(pid_ia)
             
-            # ATENÇÃO: Agora aceita múltiplos arquivos
             up_p = st.file_uploader("Projeto (Arquitetônico/Pranchas)", type='pdf', accept_multiple_files=True)
             up_l = st.file_uploader("Lei (Legislação Municipal)", type='pdf', accept_multiple_files=True)
             
             if st.button("Analisar") and up_p and up_l:
                 with st.spinner("Analisando..."):
                     try:
-                        # Extrai texto de TODOS os PDFs do Projeto
+                        # Extrai texto
                         txt_p = ""
                         for p_file in up_p:
                             reader = PyPDF2.PdfReader(p_file)
                             for page in reader.pages:
                                 txt_p += page.extract_text() or ""
                         
-                        # Extrai texto de TODOS os PDFs da Lei
                         txt_l = ""
                         for l_file in up_l:
                             reader = PyPDF2.PdfReader(l_file)
                             for page in reader.pages:
                                 txt_l += page.extract_text() or ""
                         
-                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        # --- BLINDAGEM CONTRA ERRO DE MODELO ---
+                        model = None
+                        modelos_para_tentar = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
                         
-                        # Limita o tamanho do texto para não estourar o limite de tokens (aprox. 15k caracteres de cada)
-                        res = model.generate_content(f"""
+                        resultado_final = None
+                        
+                        prompt = f"""
                         Você é um analista experiente. Analise se o projeto abaixo cumpre a legislação fornecida.
-                        
-                        DADOS DO PROCESSO:
-                        - Requerente: {d_ia[3]}
-                        - Uso: {d_ia[5]}
-                        - Tipologia: {d_ia[6]}
-                        - Área: {d_ia[7]}m²
+                        DADOS DO PROCESSO: Requerente: {d_ia[3]}, Uso: {d_ia[5]}, Tipologia: {d_ia[6]}, Área: {d_ia[7]}m²
+                        LEGISLAÇÃO (Trecho): {txt_l[:20000]}
+                        PROJETO (Conteúdo extraído): {txt_p[:20000]}
+                        Responda com: 1. Resumo, 2. Itens em Conformidade, 3. Itens em Desacordo, 4. Conclusão.
+                        """
 
-                        LEGISLAÇÃO (Trecho):
-                        {txt_l[:20000]}
+                        for nome_modelo in modelos_para_tentar:
+                            try:
+                                model = genai.GenerativeModel(nome_modelo)
+                                resultado_final = model.generate_content(prompt)
+                                st.success(f"Análise realizada com sucesso usando o modelo: {nome_modelo}")
+                                break # Se deu certo, para o loop
+                            except Exception as e:
+                                continue # Se deu erro, tenta o próximo
+                        
+                        if resultado_final:
+                            st.markdown(resultado_final.text)
+                        else:
+                            st.error("Não foi possível realizar a análise com nenhum dos modelos disponíveis. Verifique sua API Key ou atualize o 'google-generativeai'.")
 
-                        PROJETO (Conteúdo extraído):
-                        {txt_p[:20000]}
-                        
-                        Responda com:
-                        1. Resumo do Projeto
-                        2. Itens em Conformidade
-                        3. Itens em Desacordo (Se houver)
-                        4. Conclusão (Aprovado ou Reprovado)
-                        """)
-                        
-                        st.markdown(res.text)
-                    except Exception as e: st.error(f"Erro na análise: {e}")
+                    except Exception as e: st.error(f"Erro geral: {e}")
 
     # --- ABA 6: DASHBOARD ---
     with tab6:
