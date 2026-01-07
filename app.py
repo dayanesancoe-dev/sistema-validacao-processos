@@ -351,7 +351,7 @@ def main():
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
                                 st.rerun()
 
-    # --- ABA 5: IA (UPDATED) ---
+    # --- ABA 5: IA (ATUALIZADA COM MODELOS DO DEBUG) ---
     with tab5:
         st.header("Análise IA")
         if not api_key: st.warning("Sem API Key.")
@@ -375,8 +375,16 @@ def main():
                             reader = PyPDF2.PdfReader(l_file)
                             for page in reader.pages: txt_l += page.extract_text() or ""
                         
-                        # Tenta modelos em ordem de preferência
-                        modelos = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro', 'gemini-1.0-pro']
+                        # --- LISTA ATUALIZADA BASEADA NO SEU PRINT ---
+                        # Tenta primeiro os modelos que apareceram disponíveis na sua conta
+                        modelos = [
+                            'gemini-2.0-flash',       # Novo, rápido e disponível na sua conta
+                            'models/gemini-2.0-flash', # Variação com prefixo
+                            'gemini-1.5-flash',
+                            'models/gemini-1.5-flash',
+                            'gemini-1.5-pro'
+                        ]
+                        
                         resultado = None
                         
                         for m_nome in modelos:
@@ -396,11 +404,11 @@ def main():
                         if resultado:
                             st.markdown(resultado.text)
                         else:
-                            st.error("Falha ao conectar com todos os modelos de IA. Atualize o 'requirements.txt'.")
-                            with st.expander("Ver modelos disponíveis (Debug)"):
+                            st.error("Erro na conexão. Verifique se o 'requirements.txt' contém 'google-generativeai>=0.8.3'.")
+                            with st.expander("Debug"):
                                 try:
                                     for m in genai.list_models(): st.write(m.name)
-                                except Exception as e: st.write(f"Erro ao listar: {e}")
+                                except Exception as e: st.write(e)
 
                     except Exception as e: st.error(f"Erro geral: {e}")
 
