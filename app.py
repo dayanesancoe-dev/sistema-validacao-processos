@@ -123,12 +123,13 @@ def main():
     api_key = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key: genai.configure(api_key=api_key)
 
-    # === DIAGNÓSTICO DE VERSÃO (AQUI VAI MOSTRAR O PROBLEMA) ===
-    st.sidebar.warning(f"Versão da biblioteca IA instalada: {genai.__version__}")
+    # === DIAGNÓSTICO RÁPIDO ===
     if genai.__version__ < "0.8.3":
-        st.sidebar.error("⚠️ VERSÃO ANTIGA DETECTADA! O arquivo requirements.txt não foi lido corretamente.")
+        st.sidebar.error(f"⚠️ Versão desatualizada: {genai.__version__}. Reinicie o App.")
+    else:
+        st.sidebar.success(f"✅ Versão IA OK: {genai.__version__}")
 
-    # === SEÇÃO DE DADOS E BACKUP (BARRA LATERAL) ===
+    # === SEÇÃO DE DADOS E BACKUP ===
     st.sidebar.markdown("---")
     st.sidebar.header("💾 Dados e Backup")
     
@@ -160,9 +161,8 @@ def main():
         st.sidebar.markdown("---")
         st.sidebar.subheader("⚠️ Restaurar Backup")
         uploaded_db = st.sidebar.file_uploader("Upload do arquivo .db", type="db")
-        
         if uploaded_db:
-            st.sidebar.warning("Atenção: Isso substituirá TODOS os dados.")
+            st.sidebar.warning("Isso substituirá TODOS os dados.")
             if st.sidebar.button("🔴 Confirmar Restauração"):
                 try:
                     with open("processos.db", "wb") as f:
@@ -255,13 +255,11 @@ def main():
             sel_key = st.selectbox("Processo:", list(opcoes.keys()), key="tram_sel")
             pid_tram = opcoes[sel_key]
             
-            # --- NOVA MOVIMENTAÇÃO ---
             with st.form("new_tram"):
                 st.subheader("Nova Movimentação")
                 c1, c2 = st.columns(2)
                 setor = c1.selectbox("Setor Destino", setores)
                 obs = c2.text_area("Observação", height=68)
-
                 st.markdown("**Datas:**")
                 c3, c4 = st.columns(2)
                 with c3:
@@ -279,14 +277,12 @@ def main():
                     if not tem_saida:
                         executar_query("UPDATE tramitacao SET data_saida=? WHERE processo_id=? AND data_saida IS NULL", 
                                      (dt_ent.strftime('%Y-%m-%d'), pid_tram), commit=True)
-                    
                     saida_val = dt_sai.strftime('%Y-%m-%d') if tem_saida and dt_sai else None
                     executar_query("INSERT INTO tramitacao (processo_id, setor, data_entrada, data_saida, observacao) VALUES (?,?,?,?,?)",
                                  (pid_tram, setor, dt_ent.strftime('%Y-%m-%d'), saida_val, obs), commit=True)
                     st.success("Movimentação registrada!")
                     st.rerun()
 
-            # --- HISTÓRICO ---
             st.divider()
             suc, res = executar_query("SELECT * FROM tramitacao WHERE processo_id=? ORDER BY data_entrada DESC", (pid_tram,))
             if suc:
@@ -309,12 +305,10 @@ def main():
                     df_show['Saída'] = df_show['Saída'].dt.strftime('%d/%m/%Y').fillna("Atual")
                     st.dataframe(df_show[['Setor', 'Entrada', 'Saída', 'Dias', 'Obs']], use_container_width=True)
                     
-                    # --- EDIÇÃO ---
                     st.divider()
                     st.subheader("📝 Editar Histórico")
                     opts_t = {f"{r[2]} ({pd.to_datetime(r[3]).strftime('%d/%m/%Y')})": r[0] for r in rows}
                     sel_t = st.selectbox("Selecione para corrigir:", ["Selecione..."] + list(opts_t.keys()))
-                    
                     if sel_t != "Selecione...":
                         tid = opts_t[sel_t]
                         r = next((x for x in rows if x[0] == tid), None)
@@ -326,7 +320,6 @@ def main():
                                 idx_setor = setores.index(cur_sector) if cur_sector in setores else 0
                                 esetor = ec1.selectbox("Setor", setores, index=idx_setor)
                                 eobs = ec2.text_input("Observação", r[5] or "")
-                                
                                 st.markdown("**Datas:**")
                                 ec3, ec4 = st.columns(2)
                                 with ec3:
@@ -337,11 +330,9 @@ def main():
                                     if has_exit:
                                         val_sai = datetime.strptime(r[4], '%Y-%m-%d').date() if r[4] else date.today()
                                         edtsai = st.date_input("Data Saída", val_sai)
-                                
                                 st.markdown("---")
                                 btn_t_save = st.form_submit_button("Salvar Correção", type="primary")
                                 btn_t_del = st.form_submit_button("Excluir Movimentação")
-                                
                                 if btn_t_save:
                                     s_val = edtsai.strftime('%Y-%m-%d') if has_exit and edtsai else None
                                     executar_query("UPDATE tramitacao SET setor=?, data_entrada=?, data_saida=?, observacao=? WHERE id=?",
@@ -369,17 +360,15 @@ def main():
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
                                 st.rerun()
 
-    # --- ABA 5: IA (BLINDADA) ---
+    # --- ABA 5: IA (LISTA ATUALIZADA) ---
     with tab5:
         st.header("Análise IA")
         if not api_key: st.warning("Sem API Key.")
         elif procs:
             pid_ia = opcoes[st.selectbox("Processo:", list(opcoes.keys()), key="ia_sel")]
             d_ia = buscar_processo(pid_ia)
-            
             up_p = st.file_uploader("Projeto (PDF)", type='pdf', accept_multiple_files=True)
             up_l = st.file_uploader("Lei (PDF)", type='pdf', accept_multiple_files=True)
-            
             if st.button("Analisar") and up_p and up_l:
                 with st.spinner("Analisando..."):
                     try:
@@ -387,19 +376,17 @@ def main():
                         for p_file in up_p:
                             reader = PyPDF2.PdfReader(p_file)
                             for page in reader.pages: txt_p += page.extract_text() or ""
-                        
                         txt_l = ""
                         for l_file in up_l:
                             reader = PyPDF2.PdfReader(l_file)
                             for page in reader.pages: txt_l += page.extract_text() or ""
                         
-                        # --- LISTA DE MODELOS COMPATÍVEIS ---
+                        # Lista de Modelos baseada no seu Debug
                         modelos = [
-                            'models/gemini-1.5-flash', # Prioridade: rápido e estável
-                            'models/gemini-1.5-pro',   # Alternativa: mais inteligente
-                            'gemini-1.5-flash',
-                            'gemini-1.5-pro',
-                            'models/gemini-2.0-flash' # Novo, pode ser instável
+                            'models/gemini-2.0-flash', # Prioridade: Modelo mais novo que você tem
+                            'gemini-2.0-flash',
+                            'models/gemini-1.5-flash', # Fallback
+                            'models/gemini-1.5-pro'    # Fallback
                         ]
                         
                         resultado = None
@@ -408,33 +395,26 @@ def main():
                         for m_nome in modelos:
                             try:
                                 model = genai.GenerativeModel(m_nome)
-                                # Teste rápido de conexão
                                 resultado = model.generate_content(f"""
-                                Análise técnica de projeto.
+                                Você é um analista experiente. Analise se o projeto cumpre a legislação.
                                 DADOS: {d_ia[3]}, {d_ia[5]}, {d_ia[7]}m²
-                                LEI: {txt_l[:15000]}
-                                PROJETO: {txt_p[:15000]}
+                                LEI: {txt_l[:25000]}
+                                PROJETO: {txt_p[:25000]}
                                 Responda com: 1. Resumo, 2. Conformidade, 3. Desacordo, 4. Conclusão.
                                 """)
                                 modelo_usado = m_nome
                                 break
-                            except Exception as e:
-                                print(f"Erro com {m_nome}: {e}")
-                                continue
+                            except: continue
                         
                         if resultado:
-                            st.success(f"✅ Análise concluída usando: {modelo_usado}")
+                            st.success(f"Análise realizada com sucesso! (Modelo: {modelo_usado})")
                             st.markdown(resultado.text)
                         else:
-                            st.error("❌ ERRO CRÍTICO DE CONEXÃO COM IA")
-                            st.info(f"Sua versão instalada é: {genai.__version__}")
-                            st.info("Para corrigir: Crie o arquivo 'requirements.txt' no GitHub com: 'google-generativeai>=0.8.3'")
-                            with st.expander("Ver detalhes técnicos do erro"):
+                            st.error("Erro ao conectar com os modelos. Verifique o Debug abaixo.")
+                            with st.expander("Debug"):
                                 try:
-                                    st.write("Modelos disponíveis na sua conta:")
                                     for m in genai.list_models(): st.write(m.name)
-                                except Exception as e: st.write(f"Erro ao listar modelos: {e}")
-
+                                except Exception as e: st.write(e)
                     except Exception as e: st.error(f"Erro geral: {e}")
 
     # --- ABA 6: DASHBOARD ---
@@ -449,7 +429,6 @@ def main():
                 c3.metric("Aprovados", len(df[df['status']=='Aprovado']))
                 dias = (pd.Timestamp.now() - df['data_protocolo']).dt.days.mean()
                 c4.metric("Média Dias", f"{dias:.0f}")
-                
                 st.divider()
                 g1, g2 = st.columns(2)
                 g1.plotly_chart(px.pie(df, names='status', title='Status'), use_container_width=True)
