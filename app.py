@@ -184,7 +184,6 @@ def deletar(pid):
         conn.commit()
         return True, "✅ Processo deletado com sucesso!"
     except Exception as e:
-        # CORREÇÃO AQUI: Removido o parêntese extra
         return False, f"❌ Erro ao deletar processo: {str(e)}" 
 
 def atualizar_status(pid, novo_status):
@@ -322,14 +321,8 @@ def login_form():
         submitted = st.form_submit_button("Entrar", type="primary", use_container_width=True)
 
         if submitted:
-            # st.secrets agora tenta ler de .streamlit/secrets.toml por padrão
-            # Se você renomeou o arquivo, Streamlit ainda o encontrará se estiver na pasta .streamlit
             admin_username = st.secrets.get("admin_user", {}).get("username")
             admin_password = st.secrets.get("admin_user", {}).get("password")
-
-            # Adicionando um log para depuração
-            # st.write(f"Debug: Username digitado: {username}, Senha digitada: {password}")
-            # st.write(f"Debug: Username esperado: {admin_username}, Senha esperada: {admin_password}")
 
             if admin_username is None or admin_password is None:
                 st.error("❌ Credenciais de administrador não configuradas corretamente no '.streamlit/secrets.toml'.")
@@ -486,14 +479,16 @@ def main_app_content():
                                 st.error("❌ Por favor, preencha todos os campos para atualizar.")
 
                         if submitted_delete:
-                            if st.warning(f"Tem certeza que deseja deletar o processo {dados_processo[1]}? Todas as tramitações e análises associadas também serão deletadas."):
-                                if st.button("Confirmar Deleção", type="danger", key=f"confirm_delete_{pid_selecionado}"):
-                                    sucesso, msg = deletar(pid_selecionado)
-                                    if sucesso:
-                                        st.success(msg)
-                                        st.rerun()
-                                    else:
-                                        st.error(msg)
+                            # CORREÇÃO AQUI: Substituído o st.button por st.checkbox para confirmação
+                            st.warning(f"Tem certeza que deseja deletar o processo {dados_processo[1]}? Todas as tramitações e análises associadas também serão deletadas.")
+                            confirm_deletion = st.checkbox("Sim, eu confirmo a deleção deste processo.", key=f"confirm_checkbox_delete_{pid_selecionado}")
+                            if confirm_deletion:
+                                sucesso, msg = deletar(pid_selecionado)
+                                if sucesso:
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
 
     # ==================== ABA 3: TRAMITAÇÃO ====================
     with tab3:
@@ -591,14 +586,16 @@ def main_app_content():
                                             st.error("❌ Por favor, preencha o setor e a data de entrada.")
 
                                     if submitted_delete_tram:
-                                        if st.warning(f"Tem certeza que deseja deletar a movimentação ID {dados_tramitacao[0]}?"):
-                                            if st.button("Confirmar Deleção da Movimentação", type="danger", key=f"confirm_delete_tram_{tramitacao_selecionada_id}"):
-                                                sucesso, msg = deletar_tramitacao(tramitacao_selecionada_id)
-                                                if sucesso:
-                                                    st.success(msg)
-                                                    st.rerun()
-                                                else:
-                                                    st.error(msg)
+                                        # CORREÇÃO AQUI: Substituído o st.button por st.checkbox para confirmação
+                                        st.warning(f"Tem certeza que deseja deletar a movimentação ID {dados_tramitacao[0]}?")
+                                        confirm_tram_deletion = st.checkbox("Sim, eu confirmo a deleção desta movimentação.", key=f"confirm_checkbox_delete_tram_{tramitacao_selecionada_id}")
+                                        if confirm_tram_deletion:
+                                            sucesso, msg = deletar_tramitacao(tramitacao_selecionada_id)
+                                            if sucesso:
+                                                st.success(msg)
+                                                st.rerun()
+                                            else:
+                                                st.error(msg)
 
     # ==================== ABA 4: KANBAN ====================
     with tab4:
