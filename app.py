@@ -482,7 +482,7 @@ def main_app_content():
                             # CORREÇÃO AQUI: Substituído o st.button por st.checkbox para confirmação
                             st.warning(f"Tem certeza que deseja deletar o processo {dados_processo[1]}? Todas as tramitações e análises associadas também serão deletadas.")
                             confirm_deletion = st.checkbox("Sim, eu confirmo a deleção deste processo.", key=f"confirm_checkbox_delete_{pid_selecionado}")
-                            if confirm_deletion:
+                            if confirm_deletion: # A deleção só ocorre se o checkbox for marcado
                                 sucesso, msg = deletar(pid_selecionado)
                                 if sucesso:
                                     st.success(msg)
@@ -589,7 +589,7 @@ def main_app_content():
                                         # CORREÇÃO AQUI: Substituído o st.button por st.checkbox para confirmação
                                         st.warning(f"Tem certeza que deseja deletar a movimentação ID {dados_tramitacao[0]}?")
                                         confirm_tram_deletion = st.checkbox("Sim, eu confirmo a deleção desta movimentação.", key=f"confirm_checkbox_delete_tram_{tramitacao_selecionada_id}")
-                                        if confirm_tram_deletion:
+                                        if confirm_tram_deletion: # A deleção só ocorre se o checkbox for marcado
                                             sucesso, msg = deletar_tramitacao(tramitacao_selecionada_id)
                                             if sucesso:
                                                 st.success(msg)
