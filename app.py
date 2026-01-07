@@ -79,7 +79,6 @@ def get_processos_df():
     if not conn: return pd.DataFrame()
     try:
         df = pd.read_sql_query("SELECT * FROM processos", conn)
-        # Converter colunas de data
         df['data_protocolo'] = pd.to_datetime(df['data_protocolo'], errors='coerce')
         df['data_cadastro'] = pd.to_datetime(df['data_cadastro'], errors='coerce')
         return df
@@ -89,7 +88,7 @@ def get_processos_df():
 # ==================== INTERFACE PRINCIPAL ====================
 
 def main():
-    # --- AUTENTICAÇÃO SIMPLES ---
+    # --- AUTENTICAÇÃO ---
     if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
     
     if not st.session_state['logged_in']:
@@ -108,7 +107,7 @@ def main():
                     st.error("Dados incorretos.")
         return
 
-    # --- BARRA LATERAL ---
+    # --- MENU LATERAL ---
     st.sidebar.title("🏛️ Menu")
     if st.sidebar.button("Sair"):
         st.session_state['logged_in'] = False
@@ -119,20 +118,12 @@ def main():
     if api_key: genai.configure(api_key=api_key)
 
     # --- ABAS ---
-    # ADICIONEI "📈 Dashboard" (Gráficos) DE VOLTA
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA", "📈 Dashboard"])
 
-    # Listas Padronizadas
+    # --- VARIÁVEIS GLOBAIS ---
     usos_options = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
     tipologias_options = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
-    setores_tramitacao = [
-        "Análise prévia", 
-        "Pró-análise", 
-        "Analista", 
-        "Parecer externo", 
-        "Fiscalização", 
-        "Emissão de documentos"
-    ]
+    setores_tramitacao = ["Análise prévia", "Pró-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos"]
 
     # ABA 1: NOVO PROCESSO
     with tab1:
@@ -159,7 +150,7 @@ def main():
 
     # ABA 2: GERENCIAR
     with tab2:
-        st.header("Editar ou Excluir")
+        st.header("Editar ou Excluir Processo")
         procs = listar_processos()
         if not procs:
             st.info("Nenhum processo.")
@@ -172,7 +163,7 @@ def main():
             if dados:
                 st.markdown("---")
                 with st.form(f"form_edit_{id_selecionado}"):
-                    st.subheader("Editar Dados")
+                    st.subheader("Editar Dados Cadastrais")
                     ec1, ec2 = st.columns(2)
                     enum = ec1.text_input("Número", value=dados[1])
                     ert = ec1.text_input("RT", value=dados[2])
@@ -199,7 +190,7 @@ def main():
                         st.session_state[f'confirm_del_{id_selecionado}'] = True
                 
                 if st.session_state.get(f'confirm_del_{id_selecionado}'):
-                    st.warning("Tem certeza? Essa ação não pode ser desfeita.")
+                    st.warning("Tem certeza? Todos os históricos serão apagados.")
                     if st.button("Sim, confirmar exclusão"):
                         executar_query('DELETE FROM analises WHERE processo_id=?', (id_selecionado,), commit=True)
                         executar_query('DELETE FROM tramitacao WHERE processo_id=?', (id_selecionado,), commit=True)
@@ -208,21 +199,22 @@ def main():
                         st.session_state[f'confirm_del_{id_selecionado}'] = False
                         st.rerun()
 
-    # ABA 3: TRAMITAÇÃO
+    # ABA 3: TRAMITAÇÃO (ATUALIZADA COM EDIÇÃO)
     with tab3:
         st.header("Tramitação")
         if procs:
             sel_tram_key = st.selectbox("Processo:", list(opcoes.keys()), key="sel_tram")
             pid_tram = opcoes[sel_tram_key]
             
+            # --- FORMULÁRIO DE NOVA MOVIMENTAÇÃO ---
             with st.form("nova_tram"):
                 st.subheader("Nova Movimentação")
                 c1, c2 = st.columns(2)
                 setor = c1.selectbox("Setor Destino", setores_tramitacao)
-                dt_ent = c1.date_input("Data Entrada", value=date.today())
+                dt_ent = c1.date_input("Data Entrada no Setor", value=date.today())
                 obs = c2.text_area("Observação")
                 
-                if st.form_submit_button("Movimentar"):
+                if st.form_submit_button("Movimentar Processo"):
                     executar_query("UPDATE tramitacao SET data_saida=? WHERE processo_id=? AND data_saida IS NULL", 
                                  (dt_ent.strftime('%Y-%m-%d'), pid_tram), commit=True)
                     executar_query("INSERT INTO tramitacao (processo_id, setor, data_entrada, observacao) VALUES (?,?,?,?)",
@@ -231,20 +223,75 @@ def main():
                     st.rerun()
             
             st.divider()
+            st.subheader("Histórico de Movimentações")
             suc, res = executar_query("SELECT * FROM tramitacao WHERE processo_id=? ORDER BY data_entrada DESC", (pid_tram,))
+            
+            trams_data = []
             if suc:
-                trams = res.fetchall()
-                if trams:
-                    df = pd.DataFrame(trams, columns=['ID', 'PID', 'Setor', 'Entrada', 'Saída', 'Obs'])
+                trams_data = res.fetchall()
+                if trams_data:
+                    # Exibir Tabela
+                    df = pd.DataFrame(trams_data, columns=['ID', 'PID', 'Setor', 'Entrada', 'Saída', 'Obs'])
                     df['Entrada'] = pd.to_datetime(df['Entrada'])
                     df['Saída'] = pd.to_datetime(df['Saída'])
                     hoje = pd.Timestamp.now().normalize()
                     df['Dias'] = df.apply(lambda row: ((row['Saída'] if pd.notnull(row['Saída']) else hoje) - row['Entrada']).days, axis=1)
-                    df['Entrada'] = df['Entrada'].dt.strftime('%d/%m/%Y')
-                    df['Saída'] = df['Saída'].dt.strftime('%d/%m/%Y').fillna("Atual")
-                    st.dataframe(df[['Setor', 'Entrada', 'Saída', 'Dias', 'Obs']], use_container_width=True)
+                    
+                    df_show = df.copy()
+                    df_show['Entrada'] = df_show['Entrada'].dt.strftime('%d/%m/%Y')
+                    df_show['Saída'] = df_show['Saída'].dt.strftime('%d/%m/%Y').fillna("Atual")
+                    
+                    st.dataframe(df_show[['Setor', 'Entrada', 'Saída', 'Dias', 'Obs']], use_container_width=True)
+                    
+                    # --- ÁREA DE EDIÇÃO DO HISTÓRICO ---
+                    st.divider()
+                    st.subheader("📝 Editar Histórico")
+                    
+                    # Selectbox para escolher qual linha editar
+                    # Cria lista de opções legíveis: "Setor (Data)"
+                    opcoes_trams = {f"{t[2]} ({pd.to_datetime(t[3]).strftime('%d/%m/%Y')})": t[0] for t in trams_data}
+                    sel_t_label = st.selectbox("Selecione a movimentação para corrigir:", ["Selecione..."] + list(opcoes_trams.keys()))
+                    
+                    if sel_t_label != "Selecione...":
+                        tid_edit = opcoes_trams[sel_t_label]
+                        # Pega os dados da linha selecionada
+                        row_edit = next((t for t in trams_data if t[0] == tid_edit), None)
+                        
+                        if row_edit:
+                            with st.form(f"form_edit_tram_{tid_edit}"):
+                                col_e1, col_e2 = st.columns(2)
+                                
+                                # Campos de Edição
+                                idx_setor = setores_tramitacao.index(row_edit[2]) if row_edit[2] in setores_tramitacao else 0
+                                e_setor = col_e1.selectbox("Setor", setores_tramitacao, index=idx_setor)
+                                
+                                e_dt_ent_val = datetime.strptime(row_edit[3], '%Y-%m-%d').date() if row_edit[3] else date.today()
+                                e_dt_ent = col_e1.date_input("Data Entrada", value=e_dt_ent_val)
+                                
+                                # Lógica para Data de Saída (pode ser nula)
+                                has_exit_date = col_e2.checkbox("Possui data de saída fechada?", value=bool(row_edit[4]))
+                                e_dt_sai = None
+                                if has_exit_date:
+                                    e_dt_sai_val = datetime.strptime(row_edit[4], '%Y-%m-%d').date() if row_edit[4] else date.today()
+                                    e_dt_sai = col_e2.date_input("Data Saída", value=e_dt_sai_val)
+                                
+                                e_obs = st.text_area("Observação", value=row_edit[5] if row_edit[5] else "")
+                                
+                                c_btn1, c_btn2 = st.columns(2)
+                                if c_btn1.form_submit_button("💾 Salvar Correção", type="primary"):
+                                    saida_db = e_dt_sai.strftime('%Y-%m-%d') if has_exit_date and e_dt_sai else None
+                                    executar_query("UPDATE tramitacao SET setor=?, data_entrada=?, data_saida=?, observacao=? WHERE id=?",
+                                                 (e_setor, e_dt_ent.strftime('%Y-%m-%d'), saida_db, e_obs, tid_edit), commit=True)
+                                    st.success("Movimentação atualizada!")
+                                    st.rerun()
+                                    
+                                if c_btn2.form_submit_button("🗑️ Excluir Movimentação", type="danger"):
+                                    executar_query("DELETE FROM tramitacao WHERE id=?", (tid_edit,), commit=True)
+                                    st.success("Movimentação removida!")
+                                    st.rerun()
+
                 else:
-                    st.info("Sem histórico.")
+                    st.info("Sem histórico para exibir ou editar.")
 
     # ABA 4: KANBAN
     with tab4:
@@ -287,78 +334,37 @@ def main():
                         st.markdown(res.text)
                     except Exception as e: st.error(f"Erro: {e}")
 
-    # ABA 6: DASHBOARD (POWER BI STYLE)
+    # ABA 6: DASHBOARD
     with tab6:
         st.header("📈 Dashboard Gerencial")
-        
         if pd is None or px is None:
-            st.error("Bibliotecas de gráficos não encontradas.")
+            st.error("Bibliotecas gráficas não disponíveis.")
         else:
             df_dash = get_processos_df()
-            
             if not df_dash.empty:
-                # --- KPI CARDS (Indicadores no topo) ---
-                col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
+                # KPIs
+                c1, c2, c3, c4 = st.columns(4)
+                total = len(df_dash)
+                area = df_dash['area'].sum()
+                aprov = len(df_dash[df_dash['status'] == 'Aprovado'])
+                dias = (pd.Timestamp.now() - df_dash['data_protocolo']).dt.days.mean()
                 
-                total_procs = len(df_dash)
-                area_total = df_dash['area'].sum()
-                procs_aprovados = len(df_dash[df_dash['status'] == 'Aprovado'])
+                c1.metric("Total", total)
+                c2.metric("Área Total", f"{area:,.2f}")
+                c3.metric("Aprovados", aprov)
+                c4.metric("Média Dias", f"{dias:.0f}")
                 
-                # Cálculo simples de média de dias (data protocolo até hoje)
-                hoje = pd.Timestamp.now()
-                df_dash['dias_corridos'] = (hoje - df_dash['data_protocolo']).dt.days
-                media_dias = df_dash['dias_corridos'].mean()
-
-                col_kpi1.metric("Total Processos", total_procs)
-                col_kpi2.metric("Área Total (m²)", f"{area_total:,.2f}")
-                col_kpi3.metric("Aprovados", procs_aprovados)
-                col_kpi4.metric("Média Dias (Geral)", f"{media_dias:.0f}")
-
                 st.markdown("---")
-
-                # --- LINHA 1 DE GRÁFICOS ---
+                # Gráficos
                 g1, g2 = st.columns(2)
-                
                 with g1:
-                    # Gráfico de Rosca (Donut Chart) para Status
-                    df_status = df_dash['status'].value_counts().reset_index()
-                    df_status.columns = ['Status', 'Qtd']
-                    fig_status = px.pie(df_status, values='Qtd', names='Status', hole=0.4, 
-                                      title='Distribuição por Status', color_discrete_sequence=px.colors.qualitative.Pastel)
-                    st.plotly_chart(fig_status, use_container_width=True)
-                
+                    fig = px.pie(df_dash['status'].value_counts().reset_index(), values='count', names='status', title='Status')
+                    st.plotly_chart(fig, use_container_width=True)
                 with g2:
-                    # Gráfico de Barras para Tipologia
-                    df_tipo = df_dash['tipologia'].value_counts().reset_index()
-                    df_tipo.columns = ['Tipologia', 'Qtd']
-                    fig_tipo = px.bar(df_tipo, x='Qtd', y='Tipologia', orientation='h', 
-                                    title='Processos por Tipologia', text='Qtd', color='Tipologia')
-                    st.plotly_chart(fig_tipo, use_container_width=True)
-
-                # --- LINHA 2 DE GRÁFICOS ---
-                g3, g4 = st.columns(2)
-
-                with g3:
-                    # Treemap de Uso (Muito usado em Power BI)
-                    df_uso = df_dash.groupby('uso')['area'].sum().reset_index()
-                    fig_uso = px.treemap(df_uso, path=['uso'], values='area', 
-                                       title='Área Total por Uso (Mapa de Árvore)')
-                    st.plotly_chart(fig_uso, use_container_width=True)
-
-                with g4:
-                    # Gráfico de Linha Temporal (Evolução)
-                    if 'data_protocolo' in df_dash.columns:
-                        df_time = df_dash.groupby(df_dash['data_protocolo'].dt.to_period('M').astype(str)).size().reset_index(name='Qtd')
-                        fig_time = px.area(df_time, x='data_protocolo', y='Qtd', 
-                                         title='Evolução de Protocolos (Mensal)', markers=True)
-                        st.plotly_chart(fig_time, use_container_width=True)
-                
-                # Tabela detalhada no final
-                with st.expander("Ver Dados Brutos"):
-                    st.dataframe(df_dash)
-
+                    fig = px.bar(df_dash['uso'].value_counts().reset_index(), x='count', y='uso', orientation='h', title='Uso')
+                    st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("Nenhum dado disponível para gerar o dashboard. Cadastre processos na aba 'Novo'.")
+                st.info("Cadastre processos para ver os indicadores.")
 
 if __name__ == "__main__":
     main()
