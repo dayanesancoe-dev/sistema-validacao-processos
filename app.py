@@ -385,7 +385,7 @@ def main_app_content():
                 else:
                     st.error("❌ Por favor, preencha todos os campos obrigatórios.")
 
-    # ==================== ABA 2: LISTAR (CORRIGIDA) ====================
+    # ==================== ABA 2: LISTAR ====================
     with tab2:
         st.header("📝 Listar e Gerenciar Processos")
         processos = listar()
@@ -431,13 +431,10 @@ def main_app_content():
                             edit_tipologia = st.selectbox("Tipologia", tipologias_options, index=tipologias_options.index(dados_processo[6]), key=f"edit_tipologia_{pid_selecionado}")
                             edit_data_protocolo = st.date_input("Data do Protocolo", value=datetime.strptime(dados_processo[8], '%Y-%m-%d').date(), key=f"edit_data_protocolo_{pid_selecionado}")
 
-                        # CORREÇÃO DE INDENTAÇÃO AQUI: 
-                        # As colunas e botões agora estão dentro do bloco 'with st.form'
-                        col_upd, col_del = st.columns(2)
-                        with col_upd:
-                            submitted_update = st.form_submit_button("Atualizar Processo", type="primary", use_container_width=True, key=f"submit_update_{pid_selecionado}")
-                        with col_del:
-                            submitted_delete = st.form_submit_button("Deletar Processo", type="danger", use_container_width=True, key=f"submit_delete_{pid_selecionado}")
+                        st.markdown("---")
+                        # CORREÇÃO DEFINITIVA: Botões fora de colunas para evitar erro de indentação
+                        submitted_update = st.form_submit_button("Atualizar Processo", type="primary", use_container_width=True, key=f"submit_update_{pid_selecionado}")
+                        submitted_delete = st.form_submit_button("Deletar Processo", type="danger", use_container_width=True, key=f"submit_delete_{pid_selecionado}")
 
                     # A lógica de processamento fica FORA do form
                     if submitted_update:
@@ -539,12 +536,11 @@ def main_app_content():
                                         edit_data_saida_val = datetime.strptime(dados_tramitacao[4], '%Y-%m-%d').date() if dados_tramitacao[4] else None
                                         edit_data_saida = st.date_input("Data de Saída (Opcional)", value=edit_data_saida_val, key=f"edit_tram_data_saida_{tramitacao_selecionada_id}")
                                         edit_observacao = st.text_area("Observação", value=dados_tramitacao[5], key=f"edit_tram_obs_{tramitacao_selecionada_id}")
-
-                                    col_upd_tram, col_del_tram = st.columns(2)
-                                    with col_upd_tram:
-                                        submitted_update_tram = st.form_submit_button("Atualizar Movimentação", type="primary", use_container_width=True, key=f"submit_update_tram_{tramitacao_selecionada_id}")
-                                    with col_del_tram:
-                                        submitted_delete_tram = st.form_submit_button("Deletar Movimentação", type="danger", use_container_width=True, key=f"submit_delete_tram_{tramitacao_selecionada_id}")
+                                    
+                                    # Simplificado aqui também para evitar problemas futuros
+                                    st.markdown("---")
+                                    submitted_update_tram = st.form_submit_button("Atualizar Movimentação", type="primary", use_container_width=True, key=f"submit_update_tram_{tramitacao_selecionada_id}")
+                                    submitted_delete_tram = st.form_submit_button("Deletar Movimentação", type="danger", use_container_width=True, key=f"submit_delete_tram_{tramitacao_selecionada_id}")
 
                                     if submitted_update_tram:
                                         if edit_setor and edit_data_entrada:
