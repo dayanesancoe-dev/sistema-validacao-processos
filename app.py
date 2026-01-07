@@ -120,8 +120,8 @@ def main():
     usos = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
     tipos = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
     
-    # === ATUALIZAÇÃO AQUI: ADICIONADO 'REQUERENTE' NA LISTA ===
-    setores = ["Análise prévia", "Pró-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos", "Requerente"]
+    # === CORREÇÃO: "Pré-análise" e inclusão de "Requerente" ===
+    setores = ["Análise prévia", "Pré-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos", "Requerente"]
 
     # --- ABA 1: CADASTRAR ---
     with tab1:
@@ -170,7 +170,7 @@ def main():
                     edata = c2.date_input("Data", datetime.strptime(d[8], '%Y-%m-%d').date())
                     
                     st.markdown("---")
-                    # BOTÕES UM EMBAIXO DO OUTRO (SEM COLUNAS) PARA EVITAR ERRO
+                    # BOTÕES SEM COLUNAS PARA EVITAR ERRO
                     btn_save = st.form_submit_button("💾 Salvar Alterações", type="primary")
                     btn_del = st.form_submit_button("🗑️ Deletar Processo", type="secondary")
 
@@ -180,7 +180,6 @@ def main():
                         st.success("Salvo!"); st.rerun()
                     
                     if btn_del:
-                        # Gambiarra segura: marca sessão para confirmar fora do form
                         st.session_state[f'del_{pid}'] = True
 
                 if st.session_state.get(f'del_{pid}'):
@@ -203,21 +202,17 @@ def main():
                 st.subheader("Nova Movimentação")
                 c1, c2 = st.columns(2)
                 setor = c1.selectbox("Setor Destino", setores)
-                # OBSERVAÇÃO AO LADO DO SETOR
                 obs = c2.text_area("Observação", height=68) 
                 
-                # DATAS LADO A LADO NA LINHA DE BAIXO
                 c3, c4 = st.columns(2)
                 dt_ent = c3.date_input("📅 Data de Entrada", value=date.today())
                 
-                # CHECKBOX E DATA DE SAÍDA
                 tem_saida = c4.checkbox("Já saiu deste setor? (Histórico)", value=False)
                 dt_sai = None
                 if tem_saida:
                     dt_sai = c4.date_input("📅 Data de Saída", value=date.today())
                 
                 if st.form_submit_button("Movimentar"):
-                    # Se não tem data de saída, fecha o anterior e abre este como atual
                     if not tem_saida:
                         executar_query("UPDATE tramitacao SET data_saida=? WHERE processo_id=? AND data_saida IS NULL", 
                                      (dt_ent.strftime('%Y-%m-%d'), pid_tram), commit=True)
@@ -240,13 +235,20 @@ def main():
                     now = pd.Timestamp.now().normalize()
                     df['Dias'] = df.apply(lambda x: ((x['Saída'] if pd.notnull(x['Saída']) else now) - x['Entrada']).days, axis=1)
                     
-                    # Formatação para exibição
+                    # === TABELA RESUMO (TOTAL DE DIAS POR SETOR) ===
+                    st.subheader("📊 Total de Dias por Setor")
+                    df_resumo = df.groupby('Setor')['Dias'].sum().reset_index().sort_values('Dias', ascending=False)
+                    st.dataframe(df_resumo, use_container_width=True)
+                    
+                    # === TABELA DETALHADA ===
+                    st.subheader("📜 Histórico Detalhado")
                     df_show = df.copy()
                     df_show['Entrada'] = df_show['Entrada'].dt.strftime('%d/%m/%Y')
                     df_show['Saída'] = df_show['Saída'].dt.strftime('%d/%m/%Y').fillna("Atual")
                     st.dataframe(df_show[['Setor', 'Entrada', 'Saída', 'Dias', 'Obs']], use_container_width=True)
                     
                     # --- EDIÇÃO DO HISTÓRICO ---
+                    st.divider()
                     st.subheader("📝 Editar Histórico")
                     opts_t = {f"{r[2]} ({pd.to_datetime(r[3]).strftime('%d/%m/%Y')})": r[0] for r in rows}
                     sel_t = st.selectbox("Selecione para corrigir:", ["Selecione..."] + list(opts_t.keys()))
@@ -257,14 +259,15 @@ def main():
                         if r:
                             with st.form(f"edit_tram_{tid}"):
                                 ec1, ec2 = st.columns(2)
-                                esetor = ec1.selectbox("Setor", setores, index=setores.index(r[2]) if r[2] in setores else 0)
+                                
+                                # Tenta selecionar o setor correto, se não existir (ex: Pró-análise antigo), usa o índice 0
+                                idx_setor = setores.index(r[2]) if r[2] in setores else 0
+                                esetor = ec1.selectbox("Setor", setores, index=idx_setor)
                                 eobs = ec2.text_input("Observação", r[5] or "")
                                 
-                                # DATAS LADO A LADO NA EDIÇÃO
                                 ec3, ec4 = st.columns(2)
                                 edtent = ec3.date_input("Data Entrada", datetime.strptime(r[3], '%Y-%m-%d').date())
                                 
-                                # Lógica Data Saída
                                 has_exit = ec4.checkbox("Definir Saída?", value=bool(r[4]))
                                 edtsai = None
                                 if has_exit:
