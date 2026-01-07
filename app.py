@@ -160,6 +160,8 @@ def main():
     # Variáveis Globais
     usos = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
     tipos = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
+    
+    # === AQUI ESTAVA O ERRO, AGORA ESTÁ CORRIGIDO ===
     setores = ["Análise prévia", "Pré-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos", "Requerente"]
 
     # --- ABA 1: CADASTRAR ---
@@ -367,44 +369,4 @@ def main():
                     try:
                         txt_p = ""
                         for p_file in up_p:
-                            reader = PyPDF2.PdfReader(p_file)
-                            for page in reader.pages: txt_p += page.extract_text() or ""
-                        
-                        txt_l = ""
-                        for l_file in up_l:
-                            reader = PyPDF2.PdfReader(l_file)
-                            for page in reader.pages: txt_l += page.extract_text() or ""
-                        
-                        # PRIORIZA O MODELO PRO (MELHOR RACIOCÍNIO)
-                        modelos = [
-                            'gemini-1.5-pro',        # Tenta o PRO primeiro
-                            'models/gemini-1.5-pro',
-                            'gemini-2.0-flash',      # Fallback para o Flash 2.0 (Muito rápido)
-                            'models/gemini-2.0-flash',
-                            'gemini-1.5-flash'       # Fallback final
-                        ]
-                        
-                        resultado = None
-                        
-                        for m_nome in modelos:
-                            try:
-                                model = genai.GenerativeModel(m_nome)
-                                resultado = model.generate_content(f"""
-                                Você é um analista experiente. Analise se o projeto cumpre a legislação.
-                                DADOS: {d_ia[3]}, {d_ia[5]}, {d_ia[7]}m²
-                                LEI: {txt_l[:20000]}
-                                PROJETO: {txt_p[:20000]}
-                                Responda com: 1. Resumo, 2. Conformidade, 3. Desacordo, 4. Conclusão.
-                                """)
-                                st.success(f"Análise feita com: {m_nome}")
-                                break
-                            except: continue
-                        
-                        if resultado:
-                            st.markdown(resultado.text)
-                        else:
-                            st.error("Erro na conexão com IA. Verifique API Key e requirements.txt")
-                            with st.expander("Debug"):
-                                try:
-                                    for m in genai.list_models(): st.write(m.name)
-                                except Exception as e: st.write(e
+                            reader = PyPDF2.PdfReader
