@@ -123,12 +123,6 @@ def main():
     api_key = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key: genai.configure(api_key=api_key)
 
-    # === DIAGNÓSTICO RÁPIDO ===
-    if genai.__version__ < "0.8.3":
-        st.sidebar.error(f"⚠️ Versão desatualizada: {genai.__version__}. Reinicie o App.")
-    else:
-        st.sidebar.success(f"✅ Versão IA OK: {genai.__version__}")
-
     # === SEÇÃO DE DADOS E BACKUP ===
     st.sidebar.markdown("---")
     st.sidebar.header("💾 Dados e Backup")
@@ -343,7 +337,7 @@ def main():
                                     st.success("Apagado!")
                                     st.rerun()
 
-    # --- ABA 4: KANBAN (ATUALIZADO COM VOLTAR) ---
+    # --- ABA 4: KANBAN ---
     with tab4:
         st.header("Kanban")
         cols = st.columns(5)
@@ -354,17 +348,11 @@ def main():
                 for p in [x for x in procs if x[9] == s]:
                     with st.container(border=True):
                         st.write(f"**{p[1]}**\n{p[3]}")
-                        
-                        # Colunas para botões (Voltar e Avançar)
                         col_back, col_next = st.columns(2)
-                        
-                        # Botão Voltar (se não for o primeiro status)
                         if i > 0:
                             if col_back.button("⬅️", key=f"back_{p[0]}"):
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i-1], p[0]), commit=True)
                                 st.rerun()
-                        
-                        # Botão Avançar (se não for o último status)
                         if i < 4:
                             if col_next.button("➡️", key=f"next_{p[0]}"):
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
@@ -391,17 +379,8 @@ def main():
                             reader = PyPDF2.PdfReader(l_file)
                             for page in reader.pages: txt_l += page.extract_text() or ""
                         
-                        # Lista de Modelos Atualizada
-                        modelos = [
-                            'models/gemini-2.5-flash', 
-                            'models/gemini-2.5-pro',   
-                            'models/gemini-2.0-flash', 
-                            'models/gemini-1.5-flash'  
-                        ]
-                        
-                        resultado = None
-                        modelo_usado = ""
-                        erros = []
+                        modelos = ['models/gemini-2.5-flash', 'models/gemini-2.5-pro', 'models/gemini-2.0-flash', 'models/gemini-1.5-flash']
+                        resultado, modelo_usado, erros = None, "", []
                         
                         for m_nome in modelos:
                             try:
@@ -420,22 +399,21 @@ def main():
                                 continue
                         
                         if resultado:
-                            st.success(f"Análise realizada com sucesso! (Modelo: {modelo_usado})")
+                            st.success(f"Análise realizada! (Modelo: {modelo_usado})")
                             st.markdown(resultado.text)
                         else:
-                            st.error("Limite de cota atingido ou erro de conexão. Tente novamente em 2 minutos.")
-                            st.error("Detalhes (para debug):")
-                            for erro in erros:
-                                st.write(erro)
+                            st.error("Erro ao analisar. Tente novamente em alguns minutos (cota).")
+                            for erro in erros: st.write(erro)
                                 
                     except Exception as e: st.error(f"Erro geral: {e}")
 
-    # --- ABA 6: DASHBOARD ---
+    # --- ABA 6: DASHBOARD (ATUALIZADA) ---
     with tab6:
         st.header("Dashboard")
         if pd is not None and px is not None:
             df = get_processos_df()
             if not df.empty:
+                # Métricas
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Total", len(df))
                 c2.metric("Área Total", f"{df['area'].sum():,.0f} m²")
@@ -443,9 +421,55 @@ def main():
                 dias = (pd.Timestamp.now() - df['data_protocolo']).dt.days.mean()
                 c4.metric("Média Dias", f"{dias:.0f}")
                 st.divider()
-                g1, g2 = st.columns(2)
-                g1.plotly_chart(px.pie(df, names='status', title='Status'), use_container_width=True)
-                g2.plotly_chart(px.bar(df['uso'].value_counts().reset_index(), x='count', y='uso', orientation='h', title='Uso'), use_container_width=True)
+                
+                # Layout 2x2
+                row1_1, row1_2 = st.columns(2)
+                row2_1, row2_2 = st.columns(2)
+                
+                # Gráfico 1: Status
+                with row1_1:
+                    st.subheader("Status dos Processos")
+                    st.plotly_chart(px.pie(df, names='status', title='Status'), use_container_width=True)
+                
+                # Gráfico 2: Uso
+                with row1_2:
+                    st.subheader("Uso (Residencial/Comercial...)")
+                    count_uso = df['uso'].value_counts().reset_index()
+                    count_uso.columns = ['uso', 'count']
+                    st.plotly_chart(px.bar(count_uso, x='count', y='uso', orientation='h', title='Uso'), use_container_width=True)
+                
+                # Gráfico 3: Tipo (Tipologia)
+                with row2_1:
+                    st.subheader("Tipo de Processo")
+                    count_tipo = df['tipologia'].value_counts().reset_index()
+                    count_tipo.columns = ['tipologia', 'count']
+                    st.plotly_chart(px.bar(count_tipo, x='count', y='tipologia', orientation='h', title='Tipologia'), use_container_width=True)
+                
+                # Gráfico 4: % Dias por Setor
+                with row2_2:
+                    st.subheader("% Tempo por Setor (Gargalos)")
+                    try:
+                        # Pega todos os dados de tramitação para cálculo global
+                        df_tram_all = pd.read_sql_query("SELECT * FROM tramitacao", conn)
+                        if not df_tram_all.empty:
+                            df_tram_all['data_entrada'] = pd.to_datetime(df_tram_all['data_entrada'])
+                            df_tram_all['data_saida'] = pd.to_datetime(df_tram_all['data_saida'])
+                            now = pd.Timestamp.now().normalize()
+                            # Se não tem saída, considera hoje
+                            df_tram_all['data_saida'] = df_tram_all['data_saida'].fillna(now)
+                            df_tram_all['dias'] = (df_tram_all['data_saida'] - df_tram_all['data_entrada']).dt.days
+                            
+                            # Normaliza nomes antigos
+                            df_tram_all['setor'] = df_tram_all['setor'].replace({'Pró-análise': 'Pré-análise', 'Pró-Análise': 'Pré-análise', 'Pro-analise': 'Pré-análise'})
+                            
+                            # Agrupa soma de dias por setor
+                            df_setor_total = df_tram_all.groupby('setor')['dias'].sum().reset_index()
+                            
+                            st.plotly_chart(px.pie(df_setor_total, values='dias', names='setor', title='Distribuição de Tempo'), use_container_width=True)
+                        else:
+                            st.info("Sem dados de tramitação suficientes.")
+                    except Exception as e:
+                        st.error(f"Erro ao calcular dias: {e}")
 
 if __name__ == "__main__":
     main()
