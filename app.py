@@ -184,7 +184,8 @@ def deletar(pid):
         conn.commit()
         return True, "✅ Processo deletado com sucesso!"
     except Exception as e:
-        return False, f"❌ Erro ao deletar processo: {str(e)}")
+        # CORREÇÃO AQUI: Removido o parêntese extra
+        return False, f"❌ Erro ao deletar processo: {str(e)}" 
 
 def atualizar_status(pid, novo_status):
     """Atualiza o status de um processo."""
