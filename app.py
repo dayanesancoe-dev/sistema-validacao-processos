@@ -75,7 +75,6 @@ def buscar_processo(numero_ou_id):
     return res.fetchone() if suc else None
 
 def get_processos_df():
-    """Retorna um DataFrame pandas com todos os processos para análise gráfica"""
     if not conn: return pd.DataFrame()
     try:
         df = pd.read_sql_query("SELECT * FROM processos", conn)
@@ -199,7 +198,7 @@ def main():
                         st.session_state[f'confirm_del_{id_selecionado}'] = False
                         st.rerun()
 
-    # ABA 3: TRAMITAÇÃO (ATUALIZADA COM EDIÇÃO)
+    # ABA 3: TRAMITAÇÃO
     with tab3:
         st.header("Tramitação")
         if procs:
@@ -212,13 +211,27 @@ def main():
                 c1, c2 = st.columns(2)
                 setor = c1.selectbox("Setor Destino", setores_tramitacao)
                 dt_ent = c1.date_input("Data Entrada no Setor", value=date.today())
-                obs = c2.text_area("Observação")
+                
+                # OPÇÃO DE SAÍDA IMEDIATA (para lançamentos retroativos)
+                st.markdown("---")
+                c3, c4 = st.columns(2)
+                ja_saiu = c3.checkbox("Já saiu deste setor? (Histórico antigo)")
+                dt_sai = None
+                if ja_saiu:
+                    dt_sai = c3.date_input("Data de Saída")
+                
+                obs = c4.text_area("Observação")
                 
                 if st.form_submit_button("Movimentar Processo"):
-                    executar_query("UPDATE tramitacao SET data_saida=? WHERE processo_id=? AND data_saida IS NULL", 
-                                 (dt_ent.strftime('%Y-%m-%d'), pid_tram), commit=True)
-                    executar_query("INSERT INTO tramitacao (processo_id, setor, data_entrada, observacao) VALUES (?,?,?,?)",
-                                 (pid_tram, setor, dt_ent.strftime('%Y-%m-%d'), obs), commit=True)
+                    # Se NÃO for um histórico antigo (ou seja, é atual), fecha o anterior
+                    if not ja_saiu:
+                        executar_query("UPDATE tramitacao SET data_saida=? WHERE processo_id=? AND data_saida IS NULL", 
+                                     (dt_ent.strftime('%Y-%m-%d'), pid_tram), commit=True)
+                    
+                    data_saida_db = dt_sai.strftime('%Y-%m-%d') if ja_saiu and dt_sai else None
+                    
+                    executar_query("INSERT INTO tramitacao (processo_id, setor, data_entrada, data_saida, observacao) VALUES (?,?,?,?,?)",
+                                 (pid_tram, setor, dt_ent.strftime('%Y-%m-%d'), data_saida_db, obs), commit=True)
                     st.success("Movimentado!")
                     st.rerun()
             
@@ -247,29 +260,25 @@ def main():
                     st.divider()
                     st.subheader("📝 Editar Histórico")
                     
-                    # Selectbox para escolher qual linha editar
-                    # Cria lista de opções legíveis: "Setor (Data)"
                     opcoes_trams = {f"{t[2]} ({pd.to_datetime(t[3]).strftime('%d/%m/%Y')})": t[0] for t in trams_data}
                     sel_t_label = st.selectbox("Selecione a movimentação para corrigir:", ["Selecione..."] + list(opcoes_trams.keys()))
                     
                     if sel_t_label != "Selecione...":
                         tid_edit = opcoes_trams[sel_t_label]
-                        # Pega os dados da linha selecionada
                         row_edit = next((t for t in trams_data if t[0] == tid_edit), None)
                         
                         if row_edit:
                             with st.form(f"form_edit_tram_{tid_edit}"):
                                 col_e1, col_e2 = st.columns(2)
                                 
-                                # Campos de Edição
                                 idx_setor = setores_tramitacao.index(row_edit[2]) if row_edit[2] in setores_tramitacao else 0
                                 e_setor = col_e1.selectbox("Setor", setores_tramitacao, index=idx_setor)
                                 
                                 e_dt_ent_val = datetime.strptime(row_edit[3], '%Y-%m-%d').date() if row_edit[3] else date.today()
                                 e_dt_ent = col_e1.date_input("Data Entrada", value=e_dt_ent_val)
                                 
-                                # Lógica para Data de Saída (pode ser nula)
-                                has_exit_date = col_e2.checkbox("Possui data de saída fechada?", value=bool(row_edit[4]))
+                                # Lógica Data Saída na Edição
+                                has_exit_date = col_e2.checkbox("Definir Data de Saída?", value=bool(row_edit[4]))
                                 e_dt_sai = None
                                 if has_exit_date:
                                     e_dt_sai_val = datetime.strptime(row_edit[4], '%Y-%m-%d').date() if row_edit[4] else date.today()
@@ -277,15 +286,16 @@ def main():
                                 
                                 e_obs = st.text_area("Observação", value=row_edit[5] if row_edit[5] else "")
                                 
-                                c_btn1, c_btn2 = st.columns(2)
-                                if c_btn1.form_submit_button("💾 Salvar Correção", type="primary"):
+                                st.markdown("---")
+                                # BOTÕES FORA DE COLUNAS PARA EVITAR O ERRO
+                                if st.form_submit_button("💾 Salvar Correção", type="primary"):
                                     saida_db = e_dt_sai.strftime('%Y-%m-%d') if has_exit_date and e_dt_sai else None
                                     executar_query("UPDATE tramitacao SET setor=?, data_entrada=?, data_saida=?, observacao=? WHERE id=?",
                                                  (e_setor, e_dt_ent.strftime('%Y-%m-%d'), saida_db, e_obs, tid_edit), commit=True)
                                     st.success("Movimentação atualizada!")
                                     st.rerun()
                                     
-                                if c_btn2.form_submit_button("🗑️ Excluir Movimentação", type="danger"):
+                                if st.form_submit_button("🗑️ Excluir Movimentação", type="danger"):
                                     executar_query("DELETE FROM tramitacao WHERE id=?", (tid_edit,), commit=True)
                                     st.success("Movimentação removida!")
                                     st.rerun()
@@ -342,7 +352,6 @@ def main():
         else:
             df_dash = get_processos_df()
             if not df_dash.empty:
-                # KPIs
                 c1, c2, c3, c4 = st.columns(4)
                 total = len(df_dash)
                 area = df_dash['area'].sum()
@@ -355,7 +364,6 @@ def main():
                 c4.metric("Média Dias", f"{dias:.0f}")
                 
                 st.markdown("---")
-                # Gráficos
                 g1, g2 = st.columns(2)
                 with g1:
                     fig = px.pie(df_dash['status'].value_counts().reset_index(), values='count', names='status', title='Status')
