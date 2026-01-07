@@ -30,7 +30,7 @@ if 'username' not in st.session_state: # Adicionado para armazenar o nome de usu
 if st.session_state['db_reset_needed_rerun']:
     st.session_state['db_reset_needed_rerun'] = False
     st.rerun()
-
+ 
 # ==================== BANCO DE DADOS ====================
 
 # A função reset_database foi removida para simplificar e evitar o erro persistente.
