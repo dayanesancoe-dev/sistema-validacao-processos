@@ -123,6 +123,12 @@ def main():
     api_key = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key: genai.configure(api_key=api_key)
 
+    # === DIAGNÓSTICO RÁPIDO ===
+    if genai.__version__ < "0.8.3":
+        st.sidebar.error(f"⚠️ Versão desatualizada: {genai.__version__}. Reinicie o App.")
+    else:
+        st.sidebar.success(f"✅ Versão IA OK: {genai.__version__}")
+
     # === SEÇÃO DE DADOS E BACKUP ===
     st.sidebar.markdown("---")
     st.sidebar.header("💾 Dados e Backup")
@@ -353,7 +359,7 @@ def main():
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
                                 st.rerun()
 
-    # --- ABA 5: IA (FINAL) ---
+    # --- ABA 5: IA (AJUSTADO PARA MODELOS 2.5) ---
     with tab5:
         st.header("Análise IA")
         if not api_key: st.warning("Sem API Key.")
@@ -374,12 +380,13 @@ def main():
                             reader = PyPDF2.PdfReader(l_file)
                             for page in reader.pages: txt_l += page.extract_text() or ""
                         
-                        # Tenta usar os modelos padrão do Google
-                        # Agora que sua lib é 0.8.6, esses nomes vão funcionar
+                        # Lista atualizada baseada no seu Debug e nos modelos que funcionaram (mas deram quota)
+                        # Tenta o 2.5 primeiro (que é novo e talvez tenha cota livre)
                         modelos = [
-                            'gemini-1.5-flash',
-                            'gemini-1.5-pro',
-                            'gemini-2.0-flash'
+                            'models/gemini-2.5-flash', # Prioridade: Novo!
+                            'models/gemini-2.5-pro',   # Alternativa nova
+                            'models/gemini-2.0-flash', # Funcionou, mas deu cota
+                            'models/gemini-1.5-flash'  # Fallback
                         ]
                         
                         resultado = None
@@ -406,8 +413,8 @@ def main():
                             st.success(f"Análise realizada com sucesso! (Modelo: {modelo_usado})")
                             st.markdown(resultado.text)
                         else:
-                            st.error("Falha na conexão com todos os modelos.")
-                            st.error("Detalhes do erro (para debug):")
+                            st.error("Limite de cota atingido ou erro de conexão. Tente novamente em 2 minutos.")
+                            st.error("Detalhes (para debug):")
                             for erro in erros:
                                 st.write(erro)
                                 
