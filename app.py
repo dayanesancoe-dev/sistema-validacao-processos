@@ -47,6 +47,11 @@ def init_db():
             FOREIGN KEY (processo_id) REFERENCES processos(id)
         )''')
         
+        # === CORREÇÃO AUTOMÁTICA DE DADOS ANTIGOS ===
+        # Este comando corrige tudo que foi salvo errado no passado
+        c.execute("UPDATE tramitacao SET setor = 'Pré-análise' WHERE setor = 'Pró-análise'")
+        c.execute("UPDATE tramitacao SET setor = 'Pré-análise' WHERE setor = 'Pró-Análise'")
+        
         conn.commit()
         return conn
     except Exception as e:
@@ -120,7 +125,7 @@ def main():
     usos = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
     tipos = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
     
-    # === CORREÇÃO: "Pré-análise" e inclusão de "Requerente" ===
+    # LISTA DE SETORES CORRIGIDA
     setores = ["Análise prévia", "Pré-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos", "Requerente"]
 
     # --- ABA 1: CADASTRAR ---
@@ -237,6 +242,7 @@ def main():
                     
                     # === TABELA RESUMO (TOTAL DE DIAS POR SETOR) ===
                     st.subheader("📊 Total de Dias por Setor")
+                    # Agrupa e soma os dias por setor para unificar Pré-análise
                     df_resumo = df.groupby('Setor')['Dias'].sum().reset_index().sort_values('Dias', ascending=False)
                     st.dataframe(df_resumo, use_container_width=True)
                     
@@ -260,8 +266,14 @@ def main():
                             with st.form(f"edit_tram_{tid}"):
                                 ec1, ec2 = st.columns(2)
                                 
-                                # Tenta selecionar o setor correto, se não existir (ex: Pró-análise antigo), usa o índice 0
-                                idx_setor = setores.index(r[2]) if r[2] in setores else 0
+                                # Tenta encontrar o setor na lista correta (Pré-análise)
+                                # Se o dado estiver antigo (Pró-análise), ele vai jogar para o índice 0 ou o mais próximo
+                                idx_setor = 0
+                                if r[2] in setores:
+                                    idx_setor = setores.index(r[2])
+                                elif r[2] == "Pró-análise" and "Pré-análise" in setores:
+                                    idx_setor = setores.index("Pré-análise")
+
                                 esetor = ec1.selectbox("Setor", setores, index=idx_setor)
                                 eobs = ec2.text_input("Observação", r[5] or "")
                                 
