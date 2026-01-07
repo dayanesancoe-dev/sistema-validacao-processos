@@ -128,7 +128,6 @@ def main():
     st.sidebar.header("💾 Dados e Backup")
     
     if conn and pd is not None:
-        # 1. Exportar Excel/CSV
         with st.sidebar.expander("📥 Exportar Planilhas"):
             df_procs = get_processos_df()
             if not df_procs.empty:
@@ -143,15 +142,13 @@ def main():
                     st.download_button("📜 Histórico Completo", csv_hist, "historico.csv", "text/csv")
             except: pass
 
-        # 2. Backup do Arquivo .DB
         if os.path.exists("processos.db"):
             with open("processos.db", "rb") as f:
                 st.sidebar.download_button(
                     label="📦 Baixar Backup (.db)",
                     data=f,
                     file_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M')}.db",
-                    mime="application/octet-stream",
-                    help="Guarde este arquivo. Ele contém TODOS os seus dados."
+                    mime="application/octet-stream"
                 )
 
     # --- ABAS ---
@@ -160,8 +157,6 @@ def main():
     # Variáveis Globais
     usos = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
     tipos = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
-    
-    # === AQUI ESTAVA O ERRO, AGORA ESTÁ CORRIGIDO ===
     setores = ["Análise prévia", "Pré-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos", "Requerente"]
 
     # --- ABA 1: CADASTRAR ---
@@ -281,12 +276,10 @@ def main():
                     now = pd.Timestamp.now().normalize()
                     df['Dias'] = df.apply(lambda x: ((x['Saída'] if pd.notnull(x['Saída']) else now) - x['Entrada']).days, axis=1)
                     
-                    # Resumo
                     st.subheader("📊 Total de Dias por Setor")
                     df_resumo = df.groupby('Setor')['Dias'].sum().reset_index().sort_values('Dias', ascending=False)
                     st.dataframe(df_resumo, use_container_width=True)
                     
-                    # Detalhado
                     st.subheader("📜 Histórico Detalhado")
                     df_show = df.copy()
                     df_show['Entrada'] = df_show['Entrada'].dt.strftime('%d/%m/%Y')
@@ -353,7 +346,7 @@ def main():
                                 executar_query("UPDATE processos SET status=? WHERE id=?", (stats[i+1], p[0]), commit=True)
                                 st.rerun()
 
-    # --- ABA 5: IA (PRIORIDADE PRO) ---
+    # --- ABA 5: IA (AJUSTADA PARA O SEU PRINT DE DEBUG) ---
     with tab5:
         st.header("Análise IA")
         if not api_key: st.warning("Sem API Key.")
@@ -377,13 +370,13 @@ def main():
                             reader = PyPDF2.PdfReader(l_file)
                             for page in reader.pages: txt_l += page.extract_text() or ""
                         
-                        # PRIORIZA O MODELO PRO (MELHOR RACIOCÍNIO)
+                        # USANDO EXATAMENTE O QUE APARECEU NO SEU DEBUG
+                        # O servidor só reconhece se tiver o prefixo "models/" em alguns casos
                         modelos = [
-                            'gemini-1.5-pro',        # Tenta o PRO primeiro
-                            'models/gemini-1.5-pro',
-                            'gemini-2.0-flash',      # Fallback para o Flash 2.0 (Muito rápido)
-                            'models/gemini-2.0-flash',
-                            'gemini-1.5-flash'       # Fallback final
+                            'models/gemini-1.5-pro',   # Prioridade 1: Melhor raciocínio
+                            'models/gemini-1.5-flash', # Prioridade 2: Mais rápido
+                            'gemini-1.5-pro',          # Tentativa sem prefixo
+                            'gemini-1.5-flash'         # Tentativa sem prefixo
                         ]
                         
                         resultado = None
@@ -405,11 +398,8 @@ def main():
                         if resultado:
                             st.markdown(resultado.text)
                         else:
-                            st.error("Erro na conexão com IA. Verifique API Key e requirements.txt")
-                            with st.expander("Debug"):
-                                try:
-                                    for m in genai.list_models(): st.write(m.name)
-                                except Exception as e: st.write(e)
+                            st.error("Erro Crítico: Atualize o 'requirements.txt' no GitHub.")
+                            st.info("Adicione a linha: google-generativeai>=0.8.3")
 
                     except Exception as e: st.error(f"Erro geral: {e}")
 
