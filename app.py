@@ -47,7 +47,7 @@ def init_db():
             FOREIGN KEY (processo_id) REFERENCES processos(id)
         )''')
         
-        # === CORREÇÃO FORÇADA DE NOMES DE SETORES ANTIGOS ===
+        # === CORREÇÃO DE NOMES DE SETORES ANTIGOS ===
         updates = [
             "UPDATE tramitacao SET setor = 'Pré-análise' WHERE setor = 'Pró-análise'",
             "UPDATE tramitacao SET setor = 'Pré-análise' WHERE setor = 'Pró-Análise'",
@@ -105,8 +105,10 @@ def main():
             user = st.text_input("Usuário")
             pwd = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar"):
+                # Busca usuário nos Secrets ou usa admin/admin como fallback
                 admin_user = st.secrets.get("admin_user", {}).get("username", "admin")
                 admin_pass = st.secrets.get("admin_user", {}).get("password", "admin")
+                
                 if user == admin_user and pwd == admin_pass:
                     st.session_state['logged_in'] = True
                     st.rerun()
@@ -120,14 +122,15 @@ def main():
         st.session_state['logged_in'] = False
         st.rerun()
     st.sidebar.markdown("---")
-    api_key = st.sidebar.text_input("API Key Gemini", type="password")
-    if api_key: genai.configure(api_key=api_key)
-
+    
+    # Campo para API Key (Opcional se já estiver no secrets)
+    api_key_input = st.sidebar.text_input("API Key Gemini", type="password")
+    if api_key_input: 
+        genai.configure(api_key=api_key_input)
+    
     # === DIAGNÓSTICO RÁPIDO ===
     if genai.__version__ < "0.8.3":
-        st.sidebar.error(f"⚠️ Versão desatualizada: {genai.__version__}. Reinicie o App.")
-    else:
-        st.sidebar.success(f"✅ Versão IA OK: {genai.__version__}")
+        st.sidebar.error(f"⚠️ Versão IA antiga: {genai.__version__}. Atualize o requirements.txt")
 
     # === SEÇÃO DE DADOS E BACKUP ===
     st.sidebar.markdown("---")
@@ -176,7 +179,7 @@ def main():
     # --- ABAS ---
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA", "📈 Dashboard"])
 
-    # Variáveis Globais (ATUALIZADAS)
+    # === LISTAS GLOBAIS (ATUALIZADAS) ===
     usos = [
         "Multifamiliar", 
         "Serviços", 
@@ -188,6 +191,8 @@ def main():
     ]
     
     tipos = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
+    
+    # Sintaxe corrigida (fechamento do colchete)
     setores = ["Análise prévia", "Pré-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos", "Requerente"]
 
     # --- ABA 1: CADASTRAR ---
@@ -292,7 +297,8 @@ def main():
                     st.rerun()
 
             st.divider()
-            suc, res = executar_query("SELECT * FROM tramitacao WHERE processo_id=? ORDER BY data_entrada DESC", (pid_tram,))
+            # Busca do banco em qualquer ordem, pois ordenamos no Pandas
+            suc, res = executar_query("SELECT * FROM tramitacao WHERE processo_id=?", (pid_tram,))
             if suc:
                 rows = res.fetchall()
                 if rows:
@@ -308,13 +314,16 @@ def main():
                     st.dataframe(df_resumo, use_container_width=True)
                     
                     st.subheader("📜 Histórico Detalhado")
-                    df_show = df.copy()
+                    # === ORDENAÇÃO CRONOLÓGICA (Antigo -> Novo) ===
+                    df_show = df.sort_values(by='Entrada', ascending=True).copy()
+                    
                     df_show['Entrada'] = df_show['Entrada'].dt.strftime('%d/%m/%Y')
                     df_show['Saída'] = df_show['Saída'].dt.strftime('%d/%m/%Y').fillna("Atual")
                     st.dataframe(df_show[['Setor', 'Entrada', 'Saída', 'Dias', 'Obs']], use_container_width=True)
                     
                     st.divider()
                     st.subheader("📝 Editar Histórico")
+                    # Menu de seleção para edição
                     opts_t = {f"{r[2]} ({pd.to_datetime(r[3]).strftime('%d/%m/%Y')})": r[0] for r in rows}
                     sel_t = st.selectbox("Selecione para corrigir:", ["Selecione..."] + list(opts_t.keys()))
                     if sel_t != "Selecione...":
@@ -376,7 +385,8 @@ def main():
     # --- ABA 5: IA ---
     with tab5:
         st.header("Análise IA")
-        if not api_key: st.warning("Sem API Key.")
+        if not api_key_input and "GOOGLE_API_KEY" not in os.environ:
+             st.info("Insira a API Key no menu lateral para usar a IA.")
         elif procs:
             pid_ia = opcoes[st.selectbox("Processo:", list(opcoes.keys()), key="ia_sel")]
             d_ia = buscar_processo(pid_ia)
@@ -394,7 +404,8 @@ def main():
                             reader = PyPDF2.PdfReader(l_file)
                             for page in reader.pages: txt_l += page.extract_text() or ""
                         
-                        modelos = ['models/gemini-2.5-flash', 'models/gemini-2.5-pro', 'models/gemini-2.0-flash', 'models/gemini-1.5-flash']
+                        # Modelos atualizados
+                        modelos = ['models/gemini-2.0-flash', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro']
                         resultado, modelo_usado, erros = None, "", []
                         
                         for m_nome in modelos:
@@ -403,8 +414,8 @@ def main():
                                 resultado = model.generate_content(f"""
                                 Você é um analista experiente. Analise se o projeto cumpre a legislação.
                                 DADOS: {d_ia[3]}, {d_ia[5]}, {d_ia[7]}m²
-                                LEI: {txt_l[:25000]}
-                                PROJETO: {txt_p[:25000]}
+                                LEI: {txt_l[:30000]}
+                                PROJETO: {txt_p[:30000]}
                                 Responda com: 1. Resumo, 2. Conformidade, 3. Desacordo, 4. Conclusão.
                                 """)
                                 modelo_usado = m_nome
@@ -417,7 +428,7 @@ def main():
                             st.success(f"Análise realizada! (Modelo: {modelo_usado})")
                             st.markdown(resultado.text)
                         else:
-                            st.error("Erro ao analisar. Tente novamente em alguns minutos (cota).")
+                            st.error("Erro ao analisar. Detalhes:")
                             for erro in erros: st.write(erro)
                                 
                     except Exception as e: st.error(f"Erro geral: {e}")
