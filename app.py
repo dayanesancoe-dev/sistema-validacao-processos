@@ -123,6 +123,12 @@ def main():
     api_key = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key: genai.configure(api_key=api_key)
 
+    # === DIAGNÓSTICO RÁPIDO ===
+    if genai.__version__ < "0.8.3":
+        st.sidebar.error(f"⚠️ Versão desatualizada: {genai.__version__}. Reinicie o App.")
+    else:
+        st.sidebar.success(f"✅ Versão IA OK: {genai.__version__}")
+
     # === SEÇÃO DE DADOS E BACKUP ===
     st.sidebar.markdown("---")
     st.sidebar.header("💾 Dados e Backup")
@@ -170,8 +176,17 @@ def main():
     # --- ABAS ---
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA", "📈 Dashboard"])
 
-    # Variáveis Globais
-    usos = ["Unifamiliar", "Multifamiliar", "Comercial", "Misto", "Industrial", "Institucional"]
+    # Variáveis Globais (ATUALIZADAS)
+    usos = [
+        "Multifamiliar", 
+        "Serviços", 
+        "Comércio Varejista", 
+        "Indústria", 
+        "Unifamiliar", 
+        "Misto", 
+        "Sem destinação específica"
+    ]
+    
     tipos = ["Aprovação Inicial", "Regularização", "Modificação", "Habite-se"]
     setores = ["Análise prévia", "Pré-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos", "Requerente"]
 
@@ -407,7 +422,7 @@ def main():
                                 
                     except Exception as e: st.error(f"Erro geral: {e}")
 
-    # --- ABA 6: DASHBOARD (ATUALIZADA) ---
+    # --- ABA 6: DASHBOARD ---
     with tab6:
         st.header("Dashboard")
         if pd is not None and px is not None:
@@ -422,54 +437,61 @@ def main():
                 c4.metric("Média Dias", f"{dias:.0f}")
                 st.divider()
                 
-                # Layout 2x2
+                # Layout Grade
                 row1_1, row1_2 = st.columns(2)
                 row2_1, row2_2 = st.columns(2)
                 
-                # Gráfico 1: Status
                 with row1_1:
-                    st.subheader("Status dos Processos")
+                    st.subheader("Status")
                     st.plotly_chart(px.pie(df, names='status', title='Status'), use_container_width=True)
                 
-                # Gráfico 2: Uso
                 with row1_2:
-                    st.subheader("Uso (Residencial/Comercial...)")
+                    st.subheader("Uso")
                     count_uso = df['uso'].value_counts().reset_index()
                     count_uso.columns = ['uso', 'count']
                     st.plotly_chart(px.bar(count_uso, x='count', y='uso', orientation='h', title='Uso'), use_container_width=True)
                 
-                # Gráfico 3: Tipo (Tipologia)
                 with row2_1:
-                    st.subheader("Tipo de Processo")
+                    st.subheader("Tipologia")
                     count_tipo = df['tipologia'].value_counts().reset_index()
                     count_tipo.columns = ['tipologia', 'count']
                     st.plotly_chart(px.bar(count_tipo, x='count', y='tipologia', orientation='h', title='Tipologia'), use_container_width=True)
                 
-                # Gráfico 4: % Dias por Setor
                 with row2_2:
-                    st.subheader("% Tempo por Setor (Gargalos)")
+                    st.subheader("% Tempo por Setor")
                     try:
-                        # Pega todos os dados de tramitação para cálculo global
                         df_tram_all = pd.read_sql_query("SELECT * FROM tramitacao", conn)
                         if not df_tram_all.empty:
                             df_tram_all['data_entrada'] = pd.to_datetime(df_tram_all['data_entrada'])
                             df_tram_all['data_saida'] = pd.to_datetime(df_tram_all['data_saida'])
                             now = pd.Timestamp.now().normalize()
-                            # Se não tem saída, considera hoje
                             df_tram_all['data_saida'] = df_tram_all['data_saida'].fillna(now)
                             df_tram_all['dias'] = (df_tram_all['data_saida'] - df_tram_all['data_entrada']).dt.days
-                            
-                            # Normaliza nomes antigos
-                            df_tram_all['setor'] = df_tram_all['setor'].replace({'Pró-análise': 'Pré-análise', 'Pró-Análise': 'Pré-análise', 'Pro-analise': 'Pré-análise'})
-                            
-                            # Agrupa soma de dias por setor
+                            df_tram_all['setor'] = df_tram_all['setor'].replace({'Pró-análise': 'Pré-análise', 'Pró-Análise': 'Pré-análise'})
                             df_setor_total = df_tram_all.groupby('setor')['dias'].sum().reset_index()
-                            
-                            st.plotly_chart(px.pie(df_setor_total, values='dias', names='setor', title='Distribuição de Tempo'), use_container_width=True)
-                        else:
-                            st.info("Sem dados de tramitação suficientes.")
-                    except Exception as e:
-                        st.error(f"Erro ao calcular dias: {e}")
+                            st.plotly_chart(px.pie(df_setor_total, values='dias', names='setor', title='Tempo Total (Dias)'), use_container_width=True)
+                    except: pass
+
+                # === SEÇÃO: PRODUTIVIDADE POR ANALISTA ===
+                st.divider()
+                st.subheader("Produtividade da Equipe")
+                
+                df_analista = df[df['analista'].str.len() > 0].groupby('analista')['area'].sum().reset_index()
+                df_analista = df_analista.sort_values('area', ascending=True)
+                
+                if not df_analista.empty:
+                    fig_analista = px.bar(
+                        df_analista, 
+                        x='area', 
+                        y='analista', 
+                        orientation='h',
+                        title='Total de m² Analisados por Analista',
+                        text_auto='.0f',
+                        labels={'area': 'Área Total (m²)', 'analista': 'Analista'}
+                    )
+                    st.plotly_chart(fig_analista, use_container_width=True)
+                else:
+                    st.info("Nenhum analista atribuído aos processos ainda.")
 
 if __name__ == "__main__":
     main()
