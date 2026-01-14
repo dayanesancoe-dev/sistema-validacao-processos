@@ -69,11 +69,9 @@ def main():
     api_key = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key: genai.configure(api_key=api_key)
 
-    # --- LISTAS (MANTIDAS EXATAMENTE COMO VOCÊ USA) ---
+    # --- LISTAS (MANTIDAS EXATAMENTE IGUAIS) ---
     usos = ["Multifamiliar", "Serviços", "Comércio Varejista", "Indústria", "Unifamiliar", "Misto", "Sem destinação específica"]
     tipos = ["Aprovação inicial", "Levantamento do existente", "modificação de projeto", "regularização", "misto", "análise RIU", "ERB"]
-    
-    # CORREÇÃO DA SINTAXE DO COLCHETE QUE APARECIA NO SEU ERRO
     setores = ["Análise prévia", "Pré-análise", "Analista", "Parecer externo", "Fiscalização", "Emissão de documentos", "Requerente"]
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["➕ Novo", "📝 Gerenciar", "🔄 Tramitação", "📊 Kanban", "🤖 IA"])
@@ -97,21 +95,22 @@ def main():
                 d_sai = st.date_input("Data de Saída") if inf_sai else None
 
                 if st.form_submit_button("Movimentar"):
-                    # Fecha a etapa anterior para não travar o banco
+                    # Fecha etapa anterior
                     executar_query("UPDATE tramitacao SET data_saida=? WHERE processo_id=? AND data_saida IS NULL", (d_ent.strftime('%Y-%m-%d'), pid), commit=True)
+                    # Registra nova etapa
                     val_sai = d_sai.strftime('%Y-%m-%d') if inf_sai else None
                     executar_query("INSERT INTO tramitacao (processo_id, setor, data_entrada, data_saida, observacao) VALUES (?,?,?,?,?)", (pid, setor_dest, d_ent.strftime('%Y-%m-%d'), val_sai, obs), commit=True)
                     st.success("Movimentado!"); st.rerun()
 
             st.divider()
-            # MOSTRA O HISTÓRICO NA ORDEM QUE VOCÊ DESEJA (CRONOLÓGICA)
             suc_h, res_h = executar_query("SELECT setor, data_entrada, data_saida, observacao FROM tramitacao WHERE processo_id=? ORDER BY data_entrada ASC", (pid,))
             if suc_h:
                 hist = res_h.fetchall()
                 if hist:
+                    st.subheader("📜 Histórico Detalhado")
                     st.table(pd.DataFrame(hist, columns=["Setor", "Entrada", "Saída", "Obs"]))
 
-    # --- ABA 5: IA (CORREÇÃO DOS ERROS 404 E 429) ---
+    # --- ABA 5: IA (CORREÇÃO ERRO 404 E 429) ---
     with tab5:
         st.header("Análise IA")
         up_p = st.file_uploader("Projeto (PDF)", type='pdf', accept_multiple_files=True)
@@ -123,20 +122,20 @@ def main():
                     txt_p = "".join([page.extract_text() or "" for f in up_p for page in PyPDF2.PdfReader(f).pages])
                     txt_l = "".join([page.extract_text() or "" for f in up_l for page in PyPDF2.PdfReader(f).pages])
                     
-                    # CORREÇÃO DOS NOMES TÉCNICOS PARA EVITAR ERRO 404
-                    # SE VOCÊ TEM ASSINATURA, O GEMINI 1.5 PRO É O PRIMEIRO DA LISTA
+                    # Nomes técnicos corrigidos para evitar Erro 404
                     modelos = ['models/gemini-1.5-pro', 'models/gemini-1.5-flash', 'models/gemini-2.0-flash']
                     resultado = None
                     
                     for m in modelos:
                         try:
                             model = genai.GenerativeModel(m)
-                            resultado = model.generate_content(f"Analise técnica: LEI: {txt_l[:20000]} PROJETO: {txt_p[:20000]}")
+                            # Usa o Gemini Pro se sua assinatura permitir
+                            resultado = model.generate_content(f"Analise técnica rigorosa: LEI: {txt_l[:30000]} PROJETO: {txt_p[:30000]}")
                             break
                         except: continue
                     
                     if resultado: st.markdown(resultado.text)
-                    else: st.error("Limite de cota excedido (Erro 429). Aguarde 1 minuto e tente novamente.")
+                    else: st.error("Erro de cota (429). Aguarde 1 minuto.")
                 except Exception as e: st.error(f"Erro: {e}")
 
 if __name__ == "__main__":
