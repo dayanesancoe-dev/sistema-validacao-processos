@@ -299,54 +299,79 @@ def main():
                 if suc: st.success("Sucesso!"); st.rerun()
                 else: st.error(f"Erro: {msg}")
 
-    # --- ABA 2: GERENCIAR ---
+    # --- ABA 2: GERENCIAR (COM FILTRO DE ANALISTA) ---
     with tab2:
         st.header("Editar ou Excluir")
         procs = listar_processos()
         if procs:
-            opcoes = {f"{p[1]} - {p[3]}": p[0] for p in procs}
-            sel = st.selectbox("Selecione:", list(opcoes.keys()))
-            pid = opcoes[sel]
-            d = buscar_processo(pid)
-            if d:
-                st.markdown("---")
-                with st.form(f"edit_{pid}"):
-                    c1, c2 = st.columns(2)
-                    enum = c1.text_input("Número", d[1])
-                    ert = c1.text_input("RT", d[2])
-                    euso = c1.selectbox("Uso", usos, index=usos.index(d[5]) if d[5] in usos else 0)
-                    earea = c1.number_input("Área", float(d[7]))
-                    ereq = c2.text_input("Requerente", d[3])
-                    eana = c2.text_input("Analista", d[4])
-                    etipo = c2.selectbox("Tipo", tipos, index=tipos.index(d[6]) if d[6] in tipos else 0)
-                    edata = c2.date_input("Data", datetime.strptime(d[8], '%Y-%m-%d').date())
-                    
-                    st.markdown("---")
-                    btn_save = st.form_submit_button("💾 Salvar Alterações", type="primary")
-                    btn_del = st.form_submit_button("🗑️ Deletar Processo", type="secondary")
-                    
-                    if btn_save:
-                        executar_query('UPDATE processos SET numero=?, rt=?, requerente=?, analista=?, uso=?, tipologia=?, area=?, data_protocolo=? WHERE id=?',
-                                    (enum, ert, ereq, eana, euso, etipo, earea, edata.strftime('%Y-%m-%d'), pid), commit=True)
-                        st.success("Salvo!"); st.rerun()
-                    
-                    if btn_del:
-                        st.session_state[f'del_{pid}'] = True
+            # 1. Filtro de Analista
+            # Pega lista única de analistas existentes e remove vazios
+            lista_analistas = sorted(list(set([p[4] for p in procs if p[4]])))
+            opcoes_filtro = ["Todos"] + lista_analistas
+            
+            col_filt, col_vazia = st.columns([1, 2])
+            with col_filt:
+                filtro_analista = st.selectbox("🔍 Filtrar por Analista:", opcoes_filtro)
+            
+            # 2. Aplica o filtro na lista de processos
+            if filtro_analista != "Todos":
+                procs_filtrados = [p for p in procs if p[4] == filtro_analista]
+            else:
+                procs_filtrados = procs
+
+            if procs_filtrados:
+                # Cria o dropdown apenas com os processos do analista selecionado
+                opcoes = {f"{p[1]} - {p[3]} [{p[4]}]": p[0] for p in procs_filtrados}
+                sel = st.selectbox("Selecione o Processo:", list(opcoes.keys()))
+                pid = opcoes[sel]
+                d = buscar_processo(pid)
                 
-                if st.session_state.get(f'del_{pid}'):
-                    st.warning("Confirma a exclusão?")
-                    if st.button("Sim, Excluir Definitivamente"):
-                        executar_query('DELETE FROM tramitacao WHERE processo_id=?', (pid,), commit=True)
-                        executar_query('DELETE FROM analises WHERE processo_id=?', (pid,), commit=True)
-                        executar_query('DELETE FROM processos WHERE id=?', (pid,), commit=True)
-                        st.success("Excluído!"); st.rerun()
+                if d:
+                    st.markdown("---")
+                    with st.form(f"edit_{pid}"):
+                        c1, c2 = st.columns(2)
+                        enum = c1.text_input("Número", d[1])
+                        ert = c1.text_input("RT", d[2])
+                        euso = c1.selectbox("Uso", usos, index=usos.index(d[5]) if d[5] in usos else 0)
+                        earea = c1.number_input("Área", float(d[7]))
+                        ereq = c2.text_input("Requerente", d[3])
+                        eana = c2.text_input("Analista", d[4])
+                        etipo = c2.selectbox("Tipo", tipos, index=tipos.index(d[6]) if d[6] in tipos else 0)
+                        edata = c2.date_input("Data", datetime.strptime(d[8], '%Y-%m-%d').date())
+                        
+                        st.markdown("---")
+                        btn_save = st.form_submit_button("💾 Salvar Alterações", type="primary")
+                        btn_del = st.form_submit_button("🗑️ Deletar Processo", type="secondary")
+                        
+                        if btn_save:
+                            executar_query('UPDATE processos SET numero=?, rt=?, requerente=?, analista=?, uso=?, tipologia=?, area=?, data_protocolo=? WHERE id=?',
+                                        (enum, ert, ereq, eana, euso, etipo, earea, edata.strftime('%Y-%m-%d'), pid), commit=True)
+                            st.success("Salvo!"); st.rerun()
+                        
+                        if btn_del:
+                            st.session_state[f'del_{pid}'] = True
+                    
+                    if st.session_state.get(f'del_{pid}'):
+                        st.warning("Confirma a exclusão?")
+                        if st.button("Sim, Excluir Definitivamente"):
+                            executar_query('DELETE FROM tramitacao WHERE processo_id=?', (pid,), commit=True)
+                            executar_query('DELETE FROM analises WHERE processo_id=?', (pid,), commit=True)
+                            executar_query('DELETE FROM processos WHERE id=?', (pid,), commit=True)
+                            st.success("Excluído!"); st.rerun()
+            else:
+                st.warning("Nenhum processo encontrado para este analista.")
 
     # --- ABA 3: TRAMITAÇÃO ---
     with tab3:
         st.header("Tramitação")
         if procs:
-            sel_key = st.selectbox("Processo:", list(opcoes.keys()), key="tram_sel")
-            pid_tram = opcoes[sel_key]
+            sel_key = st.selectbox("Processo:", list(opcoes.keys()) if 'opcoes' in locals() else [], key="tram_sel")
+            # Nota: Aqui pegamos todos os processos ou usamos a lógica anterior, 
+            # mas para garantir acesso a todos na aba tramitação, vamos recriar o dicionário completo:
+            opcoes_geral = {f"{p[1]} - {p[3]}": p[0] for p in procs}
+            sel_key = st.selectbox("Processo:", list(opcoes_geral.keys()), key="tram_sel_main")
+            
+            pid_tram = opcoes_geral[sel_key]
             
             with st.form("new_tram"):
                 st.subheader("Nova Movimentação")
@@ -471,8 +496,12 @@ def main():
         if not api_key_input and "GOOGLE_API_KEY" not in os.environ:
              st.info("Insira a API Key no menu lateral para usar a IA.")
         elif procs:
-            pid_ia = opcoes[st.selectbox("Processo:", list(opcoes.keys()), key="ia_sel")]
+            # Lista completa para IA (sem filtro de analista para facilitar)
+            opcoes_ia = {f"{p[1]} - {p[3]}": p[0] for p in procs}
+            sel_ia = st.selectbox("Processo:", list(opcoes_ia.keys()), key="ia_sel")
+            pid_ia = opcoes_ia[sel_ia]
             d_ia = buscar_processo(pid_ia)
+            
             up_p = st.file_uploader("Projeto (PDF)", type='pdf', accept_multiple_files=True)
             up_l = st.file_uploader("Lei (PDF)", type='pdf', accept_multiple_files=True)
             
@@ -517,14 +546,13 @@ def main():
                             
                     except Exception as e: st.error(f"Erro geral: {e}")
 
-    # --- ABA 6: DASHBOARD (COM CORREÇÕES NOS GRÁFICOS) ---
+    # --- ABA 6: DASHBOARD ---
     with tab6:
         st.header("Dashboard")
         if pd is not None and px is not None:
             df = get_processos_df()
             if not df.empty:
                 # --- NORMALIZAÇÃO DE DADOS ---
-                # Padroniza a capitalização para evitar duplicatas como "Aprovação inicial" e "Aprovação Inicial"
                 df['tipologia'] = df['tipologia'].astype(str).str.strip().str.title()
                 df['uso'] = df['uso'].astype(str).str.strip().str.title()
 
@@ -566,7 +594,7 @@ def main():
                 )
                 fig_uso.update_layout(template="plotly_white", showlegend=False)
                 
-                # 3. Tipologia (CORRIGIDO)
+                # 3. Tipologia
                 count_tipo = df['tipologia'].value_counts().reset_index()
                 count_tipo.columns = ['tipologia', 'count']
                 fig_tipo = px.bar(
@@ -575,10 +603,10 @@ def main():
                     y='tipologia', 
                     orientation='h', 
                     title='Tipologia dos Projetos',
-                    color='tipologia', # MUDADO DE 'count' PARA 'tipologia'
-                    color_discrete_sequence=px.colors.qualitative.Bold # Usando uma paleta de cores distintas
+                    color='tipologia',
+                    color_discrete_sequence=px.colors.qualitative.Bold 
                 )
-                fig_tipo.update_layout(template="plotly_white", showlegend=False) # Ocultar lenda pois os eixos já explicam
+                fig_tipo.update_layout(template="plotly_white", showlegend=False)
 
                 # --- BOTÃO EXPORTAR PDF ---
                 st.divider()
