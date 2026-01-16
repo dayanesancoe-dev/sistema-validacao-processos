@@ -4,7 +4,7 @@ import PyPDF2
 from datetime import datetime, date
 import sqlite3
 import os
-from fpdf import FPDF  # <--- NOVA IMPORTAÇÃO NECESSÁRIA
+from fpdf import FPDF
 
 # ==================== CONFIGURAÇÃO INICIAL ====================
 st.set_page_config(page_title="Sistema de Validação", page_icon="🏛️", layout="wide")
@@ -92,7 +92,7 @@ def get_processos_df():
     except Exception:
         return pd.DataFrame()
 
-# === FUNÇÃO DE GERAÇÃO DE PDF DO DASHBOARD (NOVA) ===
+# === FUNÇÃO DE GERAÇÃO DE PDF DO DASHBOARD ===
 class PDFRelatorio(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 12)
@@ -105,7 +105,7 @@ class PDFRelatorio(FPDF):
         self.set_font('Arial', 'I', 8)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
-def gerar_pdf_dashboard(df, metricas):
+def gerar_pdf_dashboard(df, metricas, fig_status=None, fig_uso=None, fig_tipo=None):
     pdf = PDFRelatorio()
     pdf.add_page()
     pdf.set_font("Arial", size=10)
@@ -119,30 +119,57 @@ def gerar_pdf_dashboard(df, metricas):
     pdf.cell(0, 10, "Resumo Executivo:", 0, 1)
     pdf.set_font("Arial", size=10)
     
-    # Exibindo métricas em formato de lista
     pdf.cell(50, 10, f"Total de Processos: {metricas['total']}", 1)
     pdf.cell(50, 10, f"Aprovados: {metricas['aprovados']}", 1)
-    pdf.cell(50, 10, f"Média Dias: {metricas['media_dias']}", 1, 1) # Pula linha
+    pdf.cell(50, 10, f"Média Dias: {metricas['media_dias']}", 1, 1)
     pdf.cell(90, 10, f"Área Total Analisada: {metricas['area_total']}", 1, 1)
-    pdf.ln(10)
+    pdf.ln(5)
 
-    # 2. Tabela de Status
+    # 2. Inserção dos Gráficos (Se fornecidos)
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 10, "Distribuição por Status:", 0, 1)
-    pdf.set_font("Arial", size=9)
+    pdf.cell(0, 10, "Gráficos de Acompanhamento:", 0, 1)
     
-    status_counts = df['status'].value_counts()
-    pdf.cell(100, 8, "Status", 1)
-    pdf.cell(40, 8, "Quantidade", 1, 1)
+    # Função auxiliar para salvar e inserir imagem
+    def inserir_grafico(fig, nome_temp, titulo):
+        if fig:
+            try:
+                # Salva a imagem temporariamente
+                fig.write_image(nome_temp, width=500, height=300)
+                pdf.ln(2)
+                pdf.set_font("Arial", 'B', 9)
+                pdf.cell(0, 10, titulo, 0, 1)
+                # Insere no PDF (x, y, w, h)
+                pdf.image(nome_temp, x=10, w=140) 
+                pdf.ln(5)
+                # Remove o arquivo temporário para não acumular lixo
+                if os.path.exists(nome_temp):
+                    os.remove(nome_temp)
+            except Exception as e:
+                pdf.set_text_color(255, 0, 0)
+                pdf.cell(0, 10, f"Erro ao gerar gráfico: {str(e)}", 0, 1)
+                pdf.set_text_color(0, 0, 0)
+
+    # Adiciona os gráficos sequencialmente
+    if fig_status:
+        inserir_grafico(fig_status, "temp_status.png", "Distribuição por Status")
+        
+    # Verifica se cabe na página, senão cria nova
+    if pdf.get_y() > 200: pdf.add_page()
     
-    for status, count in status_counts.items():
-        # Tratamento simples de caracteres latinos
-        status_clean = str(status).encode('latin-1', 'replace').decode('latin-1')
-        pdf.cell(100, 8, status_clean, 1)
-        pdf.cell(40, 8, str(count), 1, 1)
+    if fig_uso:
+        inserir_grafico(fig_uso, "temp_uso.png", "Distribuição por Uso")
+        
+    if pdf.get_y() > 200: pdf.add_page()
+        
+    if fig_tipo:
+        inserir_grafico(fig_tipo, "temp_tipo.png", "Distribuição por Tipologia")
+
     pdf.ln(10)
 
-    # 3. Produtividade Analistas
+    # 3. Produtividade Analistas (Tabela)
+    # Se ainda houver espaço na página
+    if pdf.get_y() > 220: pdf.add_page()
+
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 10, "Produtividade por Analista (Área m²):", 0, 1)
     pdf.set_font("Arial", size=9)
@@ -170,7 +197,6 @@ def main():
             user = st.text_input("Usuário")
             pwd = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar"):
-                # Busca usuário nos Secrets ou usa admin/admin como fallback
                 admin_user = st.secrets.get("admin_user", {}).get("username", "admin")
                 admin_pass = st.secrets.get("admin_user", {}).get("password", "admin")
                 
@@ -188,12 +214,10 @@ def main():
         st.rerun()
     st.sidebar.markdown("---")
     
-    # Campo para API Key (Opcional se já estiver no secrets)
     api_key_input = st.sidebar.text_input("API Key Gemini", type="password")
     if api_key_input:
         genai.configure(api_key=api_key_input)
     
-    # === DIAGNÓSTICO RÁPIDO ===
     if genai.__version__ < "0.8.3":
         st.sidebar.error(f"⚠️ Versão IA antiga: {genai.__version__}. Atualize o requirements.txt")
 
@@ -489,7 +513,7 @@ def main():
                             
                     except Exception as e: st.error(f"Erro geral: {e}")
 
-    # --- ABA 6: DASHBOARD (COM EXPORTAÇÃO PDF) ---
+    # --- ABA 6: DASHBOARD (COM EXPORTAÇÃO COMPLETA) ---
     with tab6:
         st.header("Dashboard")
         if pd is not None and px is not None:
@@ -509,6 +533,22 @@ def main():
                 c3.metric("Aprovados", total_aprovados)
                 c4.metric("Média Dias", media_dias_fmt)
                 
+                # --- PREPARAÇÃO DOS GRÁFICOS ---
+                # Criamos os gráficos aqui para exibir E passar para o PDF
+                
+                # 1. Status
+                fig_status = px.pie(df, names='status', title='Status')
+                
+                # 2. Uso
+                count_uso = df['uso'].value_counts().reset_index()
+                count_uso.columns = ['uso', 'count']
+                fig_uso = px.bar(count_uso, x='count', y='uso', orientation='h', title='Uso')
+                
+                # 3. Tipologia
+                count_tipo = df['tipologia'].value_counts().reset_index()
+                count_tipo.columns = ['tipologia', 'count']
+                fig_tipo = px.bar(count_tipo, x='count', y='tipologia', orientation='h', title='Tipologia')
+
                 # --- BOTÃO EXPORTAR PDF ---
                 st.divider()
                 col_btn, col_vazia = st.columns([1, 4])
@@ -520,37 +560,37 @@ def main():
                             'aprovados': total_aprovados,
                             'media_dias': media_dias_fmt
                         }
-                        pdf_bytes = gerar_pdf_dashboard(df, metricas_pdf)
+                        
+                        # Passamos os objetos das figuras (charts) para a função
+                        pdf_bytes = gerar_pdf_dashboard(df, metricas_pdf, fig_status, fig_uso, fig_tipo)
+                        
                         st.download_button(
-                            label="📄 Baixar Relatório (PDF)",
+                            label="📄 Baixar Relatório com Gráficos",
                             data=pdf_bytes,
-                            file_name=f"Relatorio_Dashboard_{datetime.now().strftime('%d-%m-%Y')}.pdf",
+                            file_name=f"Relatorio_Graficos_{datetime.now().strftime('%d-%m-%Y')}.pdf",
                             mime="application/pdf",
                             type="primary"
                         )
                     except Exception as e:
                         st.error(f"Erro ao gerar PDF: {e}")
+                        st.caption("Dica: Verifique se 'kaleido' está no requirements.txt")
                 st.divider()
 
-                # Layout Grade
+                # Layout Grade na Tela
                 row1_1, row1_2 = st.columns(2)
                 row2_1, row2_2 = st.columns(2)
                 
                 with row1_1:
                     st.subheader("Status")
-                    st.plotly_chart(px.pie(df, names='status', title='Status'), use_container_width=True)
+                    st.plotly_chart(fig_status, use_container_width=True)
                 
                 with row1_2:
                     st.subheader("Uso")
-                    count_uso = df['uso'].value_counts().reset_index()
-                    count_uso.columns = ['uso', 'count']
-                    st.plotly_chart(px.bar(count_uso, x='count', y='uso', orientation='h', title='Uso'), use_container_width=True)
+                    st.plotly_chart(fig_uso, use_container_width=True)
                 
                 with row2_1:
                     st.subheader("Tipologia")
-                    count_tipo = df['tipologia'].value_counts().reset_index()
-                    count_tipo.columns = ['tipologia', 'count']
-                    st.plotly_chart(px.bar(count_tipo, x='count', y='tipologia', orientation='h', title='Tipologia'), use_container_width=True)
+                    st.plotly_chart(fig_tipo, use_container_width=True)
                 
                 with row2_2:
                     st.subheader("% Tempo por Setor")
