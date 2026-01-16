@@ -299,29 +299,37 @@ def main():
                 if suc: st.success("Sucesso!"); st.rerun()
                 else: st.error(f"Erro: {msg}")
 
-    # --- ABA 2: GERENCIAR (COM FILTRO DE ANALISTA) ---
+    # --- ABA 2: GERENCIAR (COM FILTRO DE ANALISTA E STATUS) ---
     with tab2:
         st.header("Editar ou Excluir")
         procs = listar_processos()
         if procs:
-            # 1. Filtro de Analista
-            # Pega lista única de analistas existentes e remove vazios
+            # === ÁREA DE FILTROS ===
+            # Pega lista única de analistas e status existentes
             lista_analistas = sorted(list(set([p[4] for p in procs if p[4]])))
-            opcoes_filtro = ["Todos"] + lista_analistas
+            lista_status = sorted(list(set([p[9] for p in procs if p[9]])))
             
-            col_filt, col_vazia = st.columns([1, 2])
-            with col_filt:
-                filtro_analista = st.selectbox("🔍 Filtrar por Analista:", opcoes_filtro)
+            # Layout dos filtros
+            st.caption("Filtros:")
+            col_f1, col_f2, col_vazia = st.columns([1, 1, 2])
             
-            # 2. Aplica o filtro na lista de processos
+            with col_f1:
+                filtro_analista = st.selectbox("👤 Analista:", ["Todos"] + lista_analistas)
+            with col_f2:
+                filtro_status = st.selectbox("📌 Status:", ["Todos"] + lista_status)
+            
+            # Lógica de Filtragem (Combinada)
+            procs_filtrados = procs
+            
             if filtro_analista != "Todos":
-                procs_filtrados = [p for p in procs if p[4] == filtro_analista]
-            else:
-                procs_filtrados = procs
+                procs_filtrados = [p for p in procs_filtrados if p[4] == filtro_analista]
+            
+            if filtro_status != "Todos":
+                procs_filtrados = [p for p in procs_filtrados if p[9] == filtro_status]
 
+            # === LISTA DE PROCESSOS FILTRADA ===
             if procs_filtrados:
-                # Cria o dropdown apenas com os processos do analista selecionado
-                opcoes = {f"{p[1]} - {p[3]} [{p[4]}]": p[0] for p in procs_filtrados}
+                opcoes = {f"{p[1]} - {p[3]} [{p[9]}]": p[0] for p in procs_filtrados}
                 sel = st.selectbox("Selecione o Processo:", list(opcoes.keys()))
                 pid = opcoes[sel]
                 d = buscar_processo(pid)
@@ -339,13 +347,20 @@ def main():
                         etipo = c2.selectbox("Tipo", tipos, index=tipos.index(d[6]) if d[6] in tipos else 0)
                         edata = c2.date_input("Data", datetime.strptime(d[8], '%Y-%m-%d').date())
                         
+                        # Campo de Status Editável caso precise corrigir manualmente
+                        status_atuais = ['Protocolado', 'Em Análise', 'Aguardando Correções', 'Aprovado', 'Reprovado']
+                        # Se o status atual não estiver na lista padrão, adiciona ele para não dar erro
+                        if d[9] not in status_atuais:
+                            status_atuais.append(d[9])
+                        estatus = c1.selectbox("Status Atual", status_atuais, index=status_atuais.index(d[9]))
+
                         st.markdown("---")
                         btn_save = st.form_submit_button("💾 Salvar Alterações", type="primary")
                         btn_del = st.form_submit_button("🗑️ Deletar Processo", type="secondary")
                         
                         if btn_save:
-                            executar_query('UPDATE processos SET numero=?, rt=?, requerente=?, analista=?, uso=?, tipologia=?, area=?, data_protocolo=? WHERE id=?',
-                                        (enum, ert, ereq, eana, euso, etipo, earea, edata.strftime('%Y-%m-%d'), pid), commit=True)
+                            executar_query('UPDATE processos SET numero=?, rt=?, requerente=?, analista=?, uso=?, tipologia=?, area=?, data_protocolo=?, status=? WHERE id=?',
+                                        (enum, ert, ereq, eana, euso, etipo, earea, edata.strftime('%Y-%m-%d'), estatus, pid), commit=True)
                             st.success("Salvo!"); st.rerun()
                         
                         if btn_del:
@@ -359,15 +374,12 @@ def main():
                             executar_query('DELETE FROM processos WHERE id=?', (pid,), commit=True)
                             st.success("Excluído!"); st.rerun()
             else:
-                st.warning("Nenhum processo encontrado para este analista.")
+                st.warning("Nenhum processo encontrado com esses filtros.")
 
     # --- ABA 3: TRAMITAÇÃO ---
     with tab3:
         st.header("Tramitação")
         if procs:
-            sel_key = st.selectbox("Processo:", list(opcoes.keys()) if 'opcoes' in locals() else [], key="tram_sel")
-            # Nota: Aqui pegamos todos os processos ou usamos a lógica anterior, 
-            # mas para garantir acesso a todos na aba tramitação, vamos recriar o dicionário completo:
             opcoes_geral = {f"{p[1]} - {p[3]}": p[0] for p in procs}
             sel_key = st.selectbox("Processo:", list(opcoes_geral.keys()), key="tram_sel_main")
             
@@ -496,7 +508,6 @@ def main():
         if not api_key_input and "GOOGLE_API_KEY" not in os.environ:
              st.info("Insira a API Key no menu lateral para usar a IA.")
         elif procs:
-            # Lista completa para IA (sem filtro de analista para facilitar)
             opcoes_ia = {f"{p[1]} - {p[3]}": p[0] for p in procs}
             sel_ia = st.selectbox("Processo:", list(opcoes_ia.keys()), key="ia_sel")
             pid_ia = opcoes_ia[sel_ia]
