@@ -508,3 +508,85 @@ def main():
                 c2.metric("Área Total", area_total)
                 c3.metric("Aprovados", total_aprovados)
                 c4.metric("Média Dias", media_dias_fmt)
+                
+                # --- BOTÃO EXPORTAR PDF ---
+                st.divider()
+                col_btn, col_vazia = st.columns([1, 4])
+                with col_btn:
+                    try:
+                        metricas_pdf = {
+                            'total': total_processos,
+                            'area_total': area_total,
+                            'aprovados': total_aprovados,
+                            'media_dias': media_dias_fmt
+                        }
+                        pdf_bytes = gerar_pdf_dashboard(df, metricas_pdf)
+                        st.download_button(
+                            label="📄 Baixar Relatório (PDF)",
+                            data=pdf_bytes,
+                            file_name=f"Relatorio_Dashboard_{datetime.now().strftime('%d-%m-%Y')}.pdf",
+                            mime="application/pdf",
+                            type="primary"
+                        )
+                    except Exception as e:
+                        st.error(f"Erro ao gerar PDF: {e}")
+                st.divider()
+
+                # Layout Grade
+                row1_1, row1_2 = st.columns(2)
+                row2_1, row2_2 = st.columns(2)
+                
+                with row1_1:
+                    st.subheader("Status")
+                    st.plotly_chart(px.pie(df, names='status', title='Status'), use_container_width=True)
+                
+                with row1_2:
+                    st.subheader("Uso")
+                    count_uso = df['uso'].value_counts().reset_index()
+                    count_uso.columns = ['uso', 'count']
+                    st.plotly_chart(px.bar(count_uso, x='count', y='uso', orientation='h', title='Uso'), use_container_width=True)
+                
+                with row2_1:
+                    st.subheader("Tipologia")
+                    count_tipo = df['tipologia'].value_counts().reset_index()
+                    count_tipo.columns = ['tipologia', 'count']
+                    st.plotly_chart(px.bar(count_tipo, x='count', y='tipologia', orientation='h', title='Tipologia'), use_container_width=True)
+                
+                with row2_2:
+                    st.subheader("% Tempo por Setor")
+                    try:
+                        df_tram_all = pd.read_sql_query("SELECT * FROM tramitacao", conn)
+                        if not df_tram_all.empty:
+                            df_tram_all['data_entrada'] = pd.to_datetime(df_tram_all['data_entrada'])
+                            df_tram_all['data_saida'] = pd.to_datetime(df_tram_all['data_saida'])
+                            now = pd.Timestamp.now().normalize()
+                            df_tram_all['data_saida'] = df_tram_all['data_saida'].fillna(now)
+                            df_tram_all['dias'] = (df_tram_all['data_saida'] - df_tram_all['data_entrada']).dt.days
+                            df_tram_all['setor'] = df_tram_all['setor'].replace({'Pró-análise': 'Pré-análise', 'Pró-Análise': 'Pré-análise'})
+                            
+                            df_setor_total = df_tram_all.groupby('setor')['dias'].sum().reset_index()
+                            st.plotly_chart(px.pie(df_setor_total, values='dias', names='setor', title='Tempo Total (Dias)'), use_container_width=True)
+                    except: pass
+                
+                # === SEÇÃO: PRODUTIVIDADE POR ANALISTA ===
+                st.divider()
+                st.subheader("Produtividade da Equipe")
+                df_analista = df[df['analista'].str.len() > 0].groupby('analista')['area'].sum().reset_index()
+                df_analista = df_analista.sort_values('area', ascending=True)
+                
+                if not df_analista.empty:
+                    fig_analista = px.bar(
+                        df_analista,
+                        x='area',
+                        y='analista',
+                        orientation='h',
+                        title='Total de m² Analisados por Analista',
+                        text_auto='.0f',
+                        labels={'area': 'Área Total (m²)', 'analista': 'Analista'}
+                    )
+                    st.plotly_chart(fig_analista, use_container_width=True)
+                else:
+                    st.info("Nenhum analista atribuído aos processos ainda.")
+
+if __name__ == "__main__":
+    main()
