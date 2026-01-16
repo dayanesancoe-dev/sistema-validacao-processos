@@ -92,18 +92,21 @@ def get_processos_df():
     except Exception:
         return pd.DataFrame()
 
-# === FUNÇÃO DE GERAÇÃO DE PDF DO DASHBOARD ===
+# === FUNÇÃO DE GERAÇÃO DE PDF DO DASHBOARD (ATUALIZADA) ===
 class PDFRelatorio(FPDF):
     def header(self):
-        self.set_font('Arial', 'B', 12)
+        # Fundo do cabeçalho
+        self.set_fill_color(240, 240, 240)
+        self.rect(0, 0, 210, 30, 'F')
+        self.set_font('Arial', 'B', 14)
+        self.set_y(10)
         self.cell(0, 10, 'Relatório Gerencial - Sistema de Validação', 0, 1, 'C')
-        self.line(10, 20, 200, 20)
-        self.ln(10)
+        self.ln(15)
 
     def footer(self):
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
+        self.cell(0, 10, f'Página {self.page_no()} - Gerado via Sistema Automático', 0, 0, 'C')
 
 def gerar_pdf_dashboard(df, metricas, fig_status=None, fig_uso=None, fig_tipo=None):
     pdf = PDFRelatorio()
@@ -111,78 +114,92 @@ def gerar_pdf_dashboard(df, metricas, fig_status=None, fig_uso=None, fig_tipo=No
     pdf.set_font("Arial", size=10)
     
     # 1. Cabeçalho com Métricas Gerais
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, f"Data do Relatório: {datetime.now().strftime('%d/%m/%Y %H:%M')}", 0, 1)
-    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 8, f"Data do Relatório: {datetime.now().strftime('%d/%m/%Y %H:%M')}", 0, 1)
+    pdf.ln(2)
     
+    # Tabela de Resumo Executivo
+    pdf.set_fill_color(230, 230, 250) # Lilás bem claro
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 10, "Resumo Executivo:", 0, 1)
+    pdf.cell(0, 8, "  Resumo Executivo", 0, 1, 'L', fill=True)
+    pdf.ln(2)
+    
     pdf.set_font("Arial", size=10)
-    
-    pdf.cell(50, 10, f"Total de Processos: {metricas['total']}", 1)
-    pdf.cell(50, 10, f"Aprovados: {metricas['aprovados']}", 1)
-    pdf.cell(50, 10, f"Média Dias: {metricas['media_dias']}", 1, 1)
-    pdf.cell(90, 10, f"Área Total Analisada: {metricas['area_total']}", 1, 1)
+    # Linha 1 de métricas
+    w_col = 63
+    pdf.cell(w_col, 8, f"Total de Processos: {metricas['total']}", 1)
+    pdf.cell(w_col, 8, f"Aprovados: {metricas['aprovados']}", 1)
+    pdf.cell(w_col, 8, f"Média Dias: {metricas['media_dias']}", 1, 1)
+    # Linha 2 de métricas
+    pdf.cell(w_col*2, 8, f"Área Total Analisada: {metricas['area_total']}", 1, 1)
     pdf.ln(5)
 
-    # 2. Inserção dos Gráficos (Se fornecidos)
+    # 2. Inserção dos Gráficos (Organização Lado a Lado)
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 10, "Gráficos de Acompanhamento:", 0, 1)
+    pdf.set_fill_color(230, 230, 250)
+    pdf.cell(0, 8, "  Indicadores Visuais", 0, 1, 'L', fill=True)
+    pdf.ln(2)
     
-    # Função auxiliar para salvar e inserir imagem
-    def inserir_grafico(fig, nome_temp, titulo):
-        if fig:
-            try:
-                # Salva a imagem temporariamente
-                fig.write_image(nome_temp, width=500, height=300)
-                pdf.ln(2)
-                pdf.set_font("Arial", 'B', 9)
-                pdf.cell(0, 10, titulo, 0, 1)
-                # Insere no PDF (x, y, w, h)
-                pdf.image(nome_temp, x=10, w=140) 
-                pdf.ln(5)
-                # Remove o arquivo temporário para não acumular lixo
-                if os.path.exists(nome_temp):
-                    os.remove(nome_temp)
-            except Exception as e:
-                pdf.set_text_color(255, 0, 0)
-                pdf.cell(0, 10, f"Erro ao gerar gráfico: {str(e)}", 0, 1)
-                pdf.set_text_color(0, 0, 0)
+    # Função auxiliar para salvar imagem temporária
+    def salvar_img_temp(fig, nome):
+        try:
+            # Força fundo branco e escala maior para qualidade
+            fig.write_image(nome, width=600, height=400, scale=2)
+            return True
+        except Exception:
+            return False
 
-    # Adiciona os gráficos sequencialmente
-    if fig_status:
-        inserir_grafico(fig_status, "temp_status.png", "Distribuição por Status")
-        
-    # Verifica se cabe na página, senão cria nova
-    if pdf.get_y() > 200: pdf.add_page()
+    y_start = pdf.get_y()
     
-    if fig_uso:
-        inserir_grafico(fig_uso, "temp_uso.png", "Distribuição por Uso")
+    # GRÁFICOS LADO A LADO (Status e Uso)
+    if fig_status and fig_uso:
+        salvar_img_temp(fig_status, "temp_status.png")
+        salvar_img_temp(fig_uso, "temp_uso.png")
         
-    if pdf.get_y() > 200: pdf.add_page()
+        # Imagem 1 (Esquerda)
+        pdf.image("temp_status.png", x=10, y=y_start, w=90)
+        # Imagem 2 (Direita)
+        pdf.image("temp_uso.png", x=105, y=y_start, w=90)
         
+        # Limpeza
+        if os.path.exists("temp_status.png"): os.remove("temp_status.png")
+        if os.path.exists("temp_uso.png"): os.remove("temp_uso.png")
+        
+        pdf.ln(65) # Espaço que os gráficos ocuparam
+
+    # GRÁFICO DE TIPOLOGIA (Abaixo, largura total centralizada)
     if fig_tipo:
-        inserir_grafico(fig_tipo, "temp_tipo.png", "Distribuição por Tipologia")
-
-    pdf.ln(10)
+        # Verifica se cabe na página
+        if pdf.get_y() > 220: pdf.add_page()
+        
+        salvar_img_temp(fig_tipo, "temp_tipo.png")
+        x_center = (210 - 120) / 2 # Centralizando
+        pdf.image("temp_tipo.png", x=x_center, w=120)
+        if os.path.exists("temp_tipo.png"): os.remove("temp_tipo.png")
+        pdf.ln(5)
 
     # 3. Produtividade Analistas (Tabela)
-    # Se ainda houver espaço na página
     if pdf.get_y() > 220: pdf.add_page()
-
+    pdf.ln(5)
+    
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 10, "Produtividade por Analista (Área m²):", 0, 1)
-    pdf.set_font("Arial", size=9)
+    pdf.set_fill_color(230, 230, 250)
+    pdf.cell(0, 8, "  Produtividade da Equipe", 0, 1, 'L', fill=True)
+    pdf.ln(2)
     
     df_analista = df[df['analista'].str.len() > 0].groupby('analista')['area'].sum().sort_values(ascending=False)
     
-    pdf.cell(100, 8, "Analista", 1)
-    pdf.cell(40, 8, "Área Total (m²)", 1, 1)
+    # Cabeçalho da tabela
+    pdf.set_fill_color(245, 245, 245)
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(120, 8, "Analista Responsável", 1, 0, fill=True)
+    pdf.cell(50, 8, "Área Total (m²)", 1, 1, fill=True)
     
+    pdf.set_font("Arial", size=9)
     for analista, area in df_analista.items():
         analista_clean = str(analista).encode('latin-1', 'replace').decode('latin-1')
-        pdf.cell(100, 8, analista_clean, 1)
-        pdf.cell(40, 8, f"{area:,.2f}", 1, 1)
+        pdf.cell(120, 8, analista_clean, 1)
+        pdf.cell(50, 8, f"{area:,.2f}", 1, 1)
 
     return pdf.output(dest='S').encode('latin-1')
 
@@ -513,7 +530,7 @@ def main():
                             
                     except Exception as e: st.error(f"Erro geral: {e}")
 
-    # --- ABA 6: DASHBOARD (COM EXPORTAÇÃO COMPLETA) ---
+    # --- ABA 6: DASHBOARD (COM EXPORTAÇÃO COLORIDA E ORGANIZADA) ---
     with tab6:
         st.header("Dashboard")
         if pd is not None and px is not None:
@@ -533,21 +550,45 @@ def main():
                 c3.metric("Aprovados", total_aprovados)
                 c4.metric("Média Dias", media_dias_fmt)
                 
-                # --- PREPARAÇÃO DOS GRÁFICOS ---
-                # Criamos os gráficos aqui para exibir E passar para o PDF
+                # --- PREPARAÇÃO DOS GRÁFICOS (COM CORES FORÇADAS) ---
                 
-                # 1. Status
-                fig_status = px.pie(df, names='status', title='Status')
+                # 1. Status (Gráfico de Pizza com cores Pastel)
+                fig_status = px.pie(
+                    df, 
+                    names='status', 
+                    title='Distribuição por Status',
+                    color_discrete_sequence=px.colors.qualitative.Set2 # Paleta colorida
+                )
+                # Força fundo branco para não sair cinza/preto no PDF
+                fig_status.update_layout(template="plotly_white", title_font_size=16)
                 
-                # 2. Uso
+                # 2. Uso (Gráfico de Barras colorido)
                 count_uso = df['uso'].value_counts().reset_index()
                 count_uso.columns = ['uso', 'count']
-                fig_uso = px.bar(count_uso, x='count', y='uso', orientation='h', title='Uso')
+                fig_uso = px.bar(
+                    count_uso, 
+                    x='count', 
+                    y='uso', 
+                    orientation='h', 
+                    title='Uso Principal',
+                    color='uso', # Colore cada barra diferente
+                    color_discrete_sequence=px.colors.qualitative.Prism 
+                )
+                fig_uso.update_layout(template="plotly_white", showlegend=False)
                 
                 # 3. Tipologia
                 count_tipo = df['tipologia'].value_counts().reset_index()
                 count_tipo.columns = ['tipologia', 'count']
-                fig_tipo = px.bar(count_tipo, x='count', y='tipologia', orientation='h', title='Tipologia')
+                fig_tipo = px.bar(
+                    count_tipo, 
+                    x='count', 
+                    y='tipologia', 
+                    orientation='h', 
+                    title='Tipologia dos Projetos',
+                    color='count', # Gradiente baseado na quantidade
+                    color_continuous_scale='Viridis'
+                )
+                fig_tipo.update_layout(template="plotly_white")
 
                 # --- BOTÃO EXPORTAR PDF ---
                 st.divider()
@@ -561,19 +602,17 @@ def main():
                             'media_dias': media_dias_fmt
                         }
                         
-                        # Passamos os objetos das figuras (charts) para a função
                         pdf_bytes = gerar_pdf_dashboard(df, metricas_pdf, fig_status, fig_uso, fig_tipo)
                         
                         st.download_button(
-                            label="📄 Baixar Relatório com Gráficos",
+                            label="📄 Baixar Relatório Colorido",
                             data=pdf_bytes,
-                            file_name=f"Relatorio_Graficos_{datetime.now().strftime('%d-%m-%Y')}.pdf",
+                            file_name=f"Relatorio_Executivo_{datetime.now().strftime('%d-%m-%Y')}.pdf",
                             mime="application/pdf",
                             type="primary"
                         )
                     except Exception as e:
                         st.error(f"Erro ao gerar PDF: {e}")
-                        st.caption("Dica: Verifique se 'kaleido' está no requirements.txt")
                 st.divider()
 
                 # Layout Grade na Tela
@@ -581,15 +620,12 @@ def main():
                 row2_1, row2_2 = st.columns(2)
                 
                 with row1_1:
-                    st.subheader("Status")
                     st.plotly_chart(fig_status, use_container_width=True)
                 
                 with row1_2:
-                    st.subheader("Uso")
                     st.plotly_chart(fig_uso, use_container_width=True)
                 
                 with row2_1:
-                    st.subheader("Tipologia")
                     st.plotly_chart(fig_tipo, use_container_width=True)
                 
                 with row2_2:
@@ -605,7 +641,7 @@ def main():
                             df_tram_all['setor'] = df_tram_all['setor'].replace({'Pró-análise': 'Pré-análise', 'Pró-Análise': 'Pré-análise'})
                             
                             df_setor_total = df_tram_all.groupby('setor')['dias'].sum().reset_index()
-                            st.plotly_chart(px.pie(df_setor_total, values='dias', names='setor', title='Tempo Total (Dias)'), use_container_width=True)
+                            st.plotly_chart(px.pie(df_setor_total, values='dias', names='setor', title='Tempo Total (Dias)', color_discrete_sequence=px.colors.qualitative.Safe), use_container_width=True)
                     except: pass
                 
                 # === SEÇÃO: PRODUTIVIDADE POR ANALISTA ===
