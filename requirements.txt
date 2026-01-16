@@ -4,3 +4,4 @@ plotly
 google-generativeai
 PyPDF2
 fpdf
+kaleido
