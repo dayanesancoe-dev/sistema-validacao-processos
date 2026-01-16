@@ -233,13 +233,23 @@ def main():
         with st.sidebar.expander("📥 Exportar Planilhas"):
             df_procs = get_processos_df()
             if not df_procs.empty:
-                csv_procs = df_procs.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                # Cria cópia para exportação formatada (DD/MM/AAAA)
+                df_export = df_procs.copy()
+                df_export['data_protocolo'] = df_export['data_protocolo'].dt.strftime('%d/%m/%Y')
+                
+                csv_procs = df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
                 st.download_button("📄 Lista de Processos", csv_procs, "processos.csv", "text/csv")
             
             try:
                 q_hist = "SELECT p.numero, t.* FROM tramitacao t JOIN processos p ON t.processo_id = p.id"
                 df_hist = pd.read_sql_query(q_hist, conn)
                 if not df_hist.empty:
+                    # Formata datas do histórico também
+                    if 'data_entrada' in df_hist.columns:
+                        df_hist['data_entrada'] = pd.to_datetime(df_hist['data_entrada']).dt.strftime('%d/%m/%Y')
+                    if 'data_saida' in df_hist.columns:
+                        df_hist['data_saida'] = pd.to_datetime(df_hist['data_saida']).dt.strftime('%d/%m/%Y')
+                    
                     csv_hist = df_hist.to_csv(index=False, sep=';', encoding='utf-8-sig')
                     st.download_button("📜 Histórico Completo", csv_hist, "historico.csv", "text/csv")
             except: pass
@@ -289,7 +299,8 @@ def main():
             req = c2.text_input("Requerente")
             ana = c2.text_input("Analista")
             tipo = c2.selectbox("Tipo", tipos)
-            data = c2.date_input("Data Protocolo")
+            # DATA FORMATADA (BR)
+            data = c2.date_input("Data Protocolo", format="DD/MM/YYYY")
             
             if st.form_submit_button("Salvar Processo"):
                 suc, msg = executar_query(
@@ -299,17 +310,15 @@ def main():
                 if suc: st.success("Sucesso!"); st.rerun()
                 else: st.error(f"Erro: {msg}")
 
-    # --- ABA 2: GERENCIAR (COM FILTRO DE ANALISTA E STATUS) ---
+    # --- ABA 2: GERENCIAR ---
     with tab2:
         st.header("Editar ou Excluir")
         procs = listar_processos()
         if procs:
             # === ÁREA DE FILTROS ===
-            # Pega lista única de analistas e status existentes
             lista_analistas = sorted(list(set([p[4] for p in procs if p[4]])))
             lista_status = sorted(list(set([p[9] for p in procs if p[9]])))
             
-            # Layout dos filtros
             st.caption("Filtros:")
             col_f1, col_f2, col_vazia = st.columns([1, 1, 2])
             
@@ -318,7 +327,7 @@ def main():
             with col_f2:
                 filtro_status = st.selectbox("📌 Status:", ["Todos"] + lista_status)
             
-            # Lógica de Filtragem (Combinada)
+            # Lógica de Filtragem
             procs_filtrados = procs
             
             if filtro_analista != "Todos":
@@ -345,13 +354,11 @@ def main():
                         ereq = c2.text_input("Requerente", d[3])
                         eana = c2.text_input("Analista", d[4])
                         etipo = c2.selectbox("Tipo", tipos, index=tipos.index(d[6]) if d[6] in tipos else 0)
-                        edata = c2.date_input("Data", datetime.strptime(d[8], '%Y-%m-%d').date())
+                        # DATA FORMATADA (BR)
+                        edata = c2.date_input("Data", datetime.strptime(d[8], '%Y-%m-%d').date(), format="DD/MM/YYYY")
                         
-                        # Campo de Status Editável caso precise corrigir manualmente
                         status_atuais = ['Protocolado', 'Em Análise', 'Aguardando Correções', 'Aprovado', 'Reprovado']
-                        # Se o status atual não estiver na lista padrão, adiciona ele para não dar erro
-                        if d[9] not in status_atuais:
-                            status_atuais.append(d[9])
+                        if d[9] not in status_atuais: status_atuais.append(d[9])
                         estatus = c1.selectbox("Status Atual", status_atuais, index=status_atuais.index(d[9]))
 
                         st.markdown("---")
@@ -394,11 +401,13 @@ def main():
                 st.markdown("**Datas:**")
                 c3, c4 = st.columns(2)
                 with c3:
-                    dt_ent = st.date_input("📅 Data de Entrada", value=date.today())
+                    # DATA FORMATADA (BR)
+                    dt_ent = st.date_input("📅 Data de Entrada", value=date.today(), format="DD/MM/YYYY")
                 with c4:
                     tem_saida = st.checkbox("Informar Data de Saída?")
                     if tem_saida:
-                        dt_sai = st.date_input("📅 Data de Saída", value=date.today())
+                        # DATA FORMATADA (BR)
+                        dt_sai = st.date_input("📅 Data de Saída", value=date.today(), format="DD/MM/YYYY")
                     else:
                         dt_sai = None
                         st.caption("Saída 'Em Aberto' (Atual)")
@@ -434,12 +443,16 @@ def main():
                     
                     st.subheader("📜 Histórico Detalhado")
                     df_show = df.sort_values(by='Entrada', ascending=True).copy()
+                    
+                    # FORMATAÇÃO BRASILEIRA NA TABELA DE EXIBIÇÃO
                     df_show['Entrada'] = df_show['Entrada'].dt.strftime('%d/%m/%Y')
                     df_show['Saída'] = df_show['Saída'].dt.strftime('%d/%m/%Y').fillna("Atual")
+                    
                     st.dataframe(df_show[['Setor', 'Entrada', 'Saída', 'Dias', 'Obs']], use_container_width=True)
 
                     st.divider()
                     st.subheader("📝 Editar Histórico")
+                    # Formata a data dentro do selectbox também
                     opts_t = {f"{r[2]} ({pd.to_datetime(r[3]).strftime('%d/%m/%Y')})": r[0] for r in rows}
                     sel_t = st.selectbox("Selecione para corrigir:", ["Selecione..."] + list(opts_t.keys()))
                     
@@ -458,13 +471,15 @@ def main():
                                 st.markdown("**Datas:**")
                                 ec3, ec4 = st.columns(2)
                                 with ec3:
-                                    edtent = st.date_input("Data Entrada", datetime.strptime(r[3], '%Y-%m-%d').date())
+                                    # DATA FORMATADA (BR)
+                                    edtent = st.date_input("Data Entrada", datetime.strptime(r[3], '%Y-%m-%d').date(), format="DD/MM/YYYY")
                                 with ec4:
                                     has_exit = st.checkbox("Possui Saída?", value=bool(r[4]))
                                     edtsai = None
                                     if has_exit:
                                         val_sai = datetime.strptime(r[4], '%Y-%m-%d').date() if r[4] else date.today()
-                                        edtsai = st.date_input("Data Saída", val_sai)
+                                        # DATA FORMATADA (BR)
+                                        edtsai = st.date_input("Data Saída", val_sai, format="DD/MM/YYYY")
                                 
                                 st.markdown("---")
                                 btn_t_save = st.form_submit_button("Salvar Correção", type="primary")
