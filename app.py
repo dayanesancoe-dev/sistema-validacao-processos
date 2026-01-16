@@ -92,7 +92,7 @@ def get_processos_df():
     except Exception:
         return pd.DataFrame()
 
-# === FUNÇÃO DE GERAÇÃO DE PDF DO DASHBOARD (ATUALIZADA) ===
+# === FUNÇÃO DE GERAÇÃO DE PDF DO DASHBOARD ===
 class PDFRelatorio(FPDF):
     def header(self):
         # Fundo do cabeçalho
@@ -125,25 +125,21 @@ def gerar_pdf_dashboard(df, metricas, fig_status=None, fig_uso=None, fig_tipo=No
     pdf.ln(2)
     
     pdf.set_font("Arial", size=10)
-    # Linha 1 de métricas
     w_col = 63
     pdf.cell(w_col, 8, f"Total de Processos: {metricas['total']}", 1)
     pdf.cell(w_col, 8, f"Aprovados: {metricas['aprovados']}", 1)
     pdf.cell(w_col, 8, f"Média Dias: {metricas['media_dias']}", 1, 1)
-    # Linha 2 de métricas
     pdf.cell(w_col*2, 8, f"Área Total Analisada: {metricas['area_total']}", 1, 1)
     pdf.ln(5)
 
-    # 2. Inserção dos Gráficos (Organização Lado a Lado)
+    # 2. Inserção dos Gráficos
     pdf.set_font("Arial", 'B', 10)
     pdf.set_fill_color(230, 230, 250)
     pdf.cell(0, 8, "  Indicadores Visuais", 0, 1, 'L', fill=True)
     pdf.ln(2)
     
-    # Função auxiliar para salvar imagem temporária
     def salvar_img_temp(fig, nome):
         try:
-            # Força fundo branco e escala maior para qualidade
             fig.write_image(nome, width=600, height=400, scale=2)
             return True
         except Exception:
@@ -155,30 +151,22 @@ def gerar_pdf_dashboard(df, metricas, fig_status=None, fig_uso=None, fig_tipo=No
     if fig_status and fig_uso:
         salvar_img_temp(fig_status, "temp_status.png")
         salvar_img_temp(fig_uso, "temp_uso.png")
-        
-        # Imagem 1 (Esquerda)
         pdf.image("temp_status.png", x=10, y=y_start, w=90)
-        # Imagem 2 (Direita)
         pdf.image("temp_uso.png", x=105, y=y_start, w=90)
-        
-        # Limpeza
         if os.path.exists("temp_status.png"): os.remove("temp_status.png")
         if os.path.exists("temp_uso.png"): os.remove("temp_uso.png")
-        
-        pdf.ln(65) # Espaço que os gráficos ocuparam
+        pdf.ln(65)
 
-    # GRÁFICO DE TIPOLOGIA (Abaixo, largura total centralizada)
+    # GRÁFICO DE TIPOLOGIA
     if fig_tipo:
-        # Verifica se cabe na página
         if pdf.get_y() > 220: pdf.add_page()
-        
         salvar_img_temp(fig_tipo, "temp_tipo.png")
-        x_center = (210 - 120) / 2 # Centralizando
+        x_center = (210 - 120) / 2
         pdf.image("temp_tipo.png", x=x_center, w=120)
         if os.path.exists("temp_tipo.png"): os.remove("temp_tipo.png")
         pdf.ln(5)
 
-    # 3. Produtividade Analistas (Tabela)
+    # 3. Produtividade Analistas
     if pdf.get_y() > 220: pdf.add_page()
     pdf.ln(5)
     
@@ -189,7 +177,6 @@ def gerar_pdf_dashboard(df, metricas, fig_status=None, fig_uso=None, fig_tipo=No
     
     df_analista = df[df['analista'].str.len() > 0].groupby('analista')['area'].sum().sort_values(ascending=False)
     
-    # Cabeçalho da tabela
     pdf.set_fill_color(245, 245, 245)
     pdf.set_font("Arial", 'B', 9)
     pdf.cell(120, 8, "Analista Responsável", 1, 0, fill=True)
@@ -530,15 +517,19 @@ def main():
                             
                     except Exception as e: st.error(f"Erro geral: {e}")
 
-    # --- ABA 6: DASHBOARD (COM EXPORTAÇÃO COLORIDA E ORGANIZADA) ---
+    # --- ABA 6: DASHBOARD (COM CORREÇÕES NOS GRÁFICOS) ---
     with tab6:
         st.header("Dashboard")
         if pd is not None and px is not None:
             df = get_processos_df()
             if not df.empty:
+                # --- NORMALIZAÇÃO DE DADOS ---
+                # Padroniza a capitalização para evitar duplicatas como "Aprovação inicial" e "Aprovação Inicial"
+                df['tipologia'] = df['tipologia'].astype(str).str.strip().str.title()
+                df['uso'] = df['uso'].astype(str).str.strip().str.title()
+
                 # Métricas
                 c1, c2, c3, c4 = st.columns(4)
-                
                 total_processos = len(df)
                 area_total = f"{df['area'].sum():,.0f} m²"
                 total_aprovados = len(df[df['status']=='Aprovado'])
@@ -550,19 +541,18 @@ def main():
                 c3.metric("Aprovados", total_aprovados)
                 c4.metric("Média Dias", media_dias_fmt)
                 
-                # --- PREPARAÇÃO DOS GRÁFICOS (COM CORES FORÇADAS) ---
+                # --- PREPARAÇÃO DOS GRÁFICOS ---
                 
-                # 1. Status (Gráfico de Pizza com cores Pastel)
+                # 1. Status
                 fig_status = px.pie(
                     df, 
                     names='status', 
                     title='Distribuição por Status',
-                    color_discrete_sequence=px.colors.qualitative.Set2 # Paleta colorida
+                    color_discrete_sequence=px.colors.qualitative.Set2
                 )
-                # Força fundo branco para não sair cinza/preto no PDF
                 fig_status.update_layout(template="plotly_white", title_font_size=16)
                 
-                # 2. Uso (Gráfico de Barras colorido)
+                # 2. Uso
                 count_uso = df['uso'].value_counts().reset_index()
                 count_uso.columns = ['uso', 'count']
                 fig_uso = px.bar(
@@ -571,12 +561,12 @@ def main():
                     y='uso', 
                     orientation='h', 
                     title='Uso Principal',
-                    color='uso', # Colore cada barra diferente
+                    color='uso', 
                     color_discrete_sequence=px.colors.qualitative.Prism 
                 )
                 fig_uso.update_layout(template="plotly_white", showlegend=False)
                 
-                # 3. Tipologia
+                # 3. Tipologia (CORRIGIDO)
                 count_tipo = df['tipologia'].value_counts().reset_index()
                 count_tipo.columns = ['tipologia', 'count']
                 fig_tipo = px.bar(
@@ -585,10 +575,10 @@ def main():
                     y='tipologia', 
                     orientation='h', 
                     title='Tipologia dos Projetos',
-                    color='count', # Gradiente baseado na quantidade
-                    color_continuous_scale='Viridis'
+                    color='tipologia', # MUDADO DE 'count' PARA 'tipologia'
+                    color_discrete_sequence=px.colors.qualitative.Bold # Usando uma paleta de cores distintas
                 )
-                fig_tipo.update_layout(template="plotly_white")
+                fig_tipo.update_layout(template="plotly_white", showlegend=False) # Ocultar lenda pois os eixos já explicam
 
                 # --- BOTÃO EXPORTAR PDF ---
                 st.divider()
